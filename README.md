@@ -8,8 +8,8 @@ Blender plugin for 3D Migoto mods and engine level mods for the specific Doll Dr
 - Auto find 3D Models and filter 2D Models
 - Auto texture option for 3D Migoto dumps
 - Auto ini writer for 3D Migoto mods
-- Engine custom mesh importer
-- An easter egg with milk chocolate that you need to merge your custom mesh on a engine custom mesh to eat (Armature based)
+- Engine mesh importer
+- An easter egg with milk chocolate that you need to merge your custom mesh on a engine mesh to eat (Armature based)
 
 # 3D Migoto Importing
 Use [XXMI-Tools](https://github.com/leotorrez/XXMITools) to importing 3D Migoto frame dumps
