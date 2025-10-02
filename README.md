@@ -1,5 +1,5 @@
 # IDVMI-Tools
-Blender plugin for 3D Migoto mods and engine level mods for the specific Doll Dressing-up PvP game
+Blender plugin for 3D Migoto mods and engine level mods for the certain Doll Dressing-up PvP game
 
 # Blender Version
 3.6
