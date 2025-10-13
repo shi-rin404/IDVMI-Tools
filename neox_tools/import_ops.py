@@ -211,7 +211,9 @@ def import_per_material(model, obj_name: str, operator):
                     global_vertex_idx = current_vertex_index + vertex_idx
                     
                     if global_vertex_idx < len(model['uv']):
-                        uv_layer[loop_idx].uv = model['uv'][global_vertex_idx]
+                        # uv_layer[loop_idx].uv = model['uv'][global_vertex_idx]
+                        u, v = model['uv'][global_vertex_idx]
+                        uv_layer[loop_idx].uv = (u, 1.0 - v)
 
         # Create Vertex Groups for all bones
         for bone_name in model['bone_name']:
