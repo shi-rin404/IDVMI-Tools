@@ -1,4 +1,4 @@
-from .neox_mesh_parser import parse_mesh_1, parse_mesh_2
+from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
 import bpy
 import os
 from mathutils import Matrix, Vector
@@ -13,7 +13,7 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
         mesh_path = bpy.path.abspath(context.scene.neox_mesh_selector)
 
         with open(mesh_path, "rb") as mesh_file:           
-            is_parser_tried = {parse_mesh_1: False, parse_mesh_2: False}
+            is_parser_tried = {parse_mesh_1: False, parse_mesh_2: False, parse_mesh_3: False}
 
             for parser in is_parser_tried:
                 try:
@@ -96,14 +96,14 @@ def import_per_material(model, obj_name: str, operator):
         bone.tail = bone.head + Vector((0, 0, 0.1))    
 
     # Set bone hierarchy and tails
-    for bone_name in model['bone_name']:  
-
+    for bone_name in model['bone_name']:          
         edit_bone = armature_obj.data.edit_bones[bone_name]
         
         if bone_name == "biped":
             bpy.ops.object.mode_set(mode='OBJECT')
             operator.report({'INFO'}, f"{'biped' in armature_obj.data.bones}")
             bpy.ops.object.mode_set(mode='EDIT')
+            edit_bone = armature_obj.data.edit_bones[bone_name]
 
         # Set parent
         parent_name = find_parent(bone_name)
@@ -232,7 +232,7 @@ def import_per_material(model, obj_name: str, operator):
             """
             for joint, weight in zip(joints, weights):
                 # Skip invalid joints (65535 = -1 as uint16)
-                if joint == 65535:
+                if joint == 65535 or joint == 255:
                     continue
                     
                 group_name = bone_namer[joint]
