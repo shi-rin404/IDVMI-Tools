@@ -1,4 +1,5 @@
-import bpy, os , math, json
+import bpy, os , math
+import bmesh
 from mathutils import Matrix, Vector
 from bpy.props import StringProperty
 from bpy_extras.io_utils import ExportHelper, axis_conversion
@@ -124,6 +125,26 @@ def parse_blender_meshes(armature, flip_uv_y) -> dict:
         for i in range(len(child.data.vertices))
 ]
             # uv_vertex: vertex başına 2-float
+
+            # Sadece n-gon'ları üçgenle            
+            bpy.ops.object.mode_set(mode='OBJECT')
+
+            bm = bmesh.new()
+            bm.from_mesh(child.data)
+
+            ngons = [f for f in bm.faces if len(f.verts) > 4]
+            if ngons:
+                bmesh.ops.triangulate(
+                    bm, faces=ngons,
+                    quad_method='BEAUTY',   # tri/quad varsa dokunmuyor
+                    ngon_method='BEAUTY'
+                )
+                bm.to_mesh(child.data)
+
+            bm.free()
+            bpy.ops.object.mode_set(mode='EDIT')
+
+            child.data.update()
 
             child.data.calc_tangents()  # aktif UV üzerinden
 
