@@ -364,7 +364,7 @@ def parse_mesh_3(model: dict[str, Any], f: BinaryIO, operator) -> dict[str, Any]
         bone_names = []
         for _ in range(bone_count):
             bone_name = f.read(32)
-            bone_name = bone_name.decode().replace('\0', '').replace(' ', '_')
+            bone_name = bone_name.decode().replace('\0', '')
             bone_names.append(bone_name)
         model['bone_name'] = bone_names
 
