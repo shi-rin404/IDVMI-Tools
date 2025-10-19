@@ -1,0 +1,84 @@
+from copy import deepcopy
+import bpy, shutil, os, base64
+import xml.etree.ElementTree as ET
+from ...export_mod import shader_textures
+from ...export_mod import ini_maker
+from ..export_ops import get_armature
+from .xml_converter import io_handler, convert_handler
+from .xml_converter.utils import formatFilePath
+
+def texture_handler(export_path, context, operator):
+    armature = get_armature(context, operator)
+    
+    material_template_path = os.path.join(os.path.dirname(__file__), "tex_resource", "initial_shading.mtl")
+    default_material_data = ET.parse(material_template_path)
+
+    materials_root_path = os.path.join(export_path, "materials")
+    if not os.path.exists(materials_root_path):
+        os.mkdir(materials_root_path)
+
+    texture_root_path = os.path.join(export_path, "textures")
+    if not os.path.exists(texture_root_path):
+        os.mkdir(texture_root_path)
+
+    for child in armature.children_recursive:
+        if not os.path.exists(os.path.join(texture_root_path, child.name)):
+            os.mkdir(os.path.join(texture_root_path, child.name))
+        
+        if child.type == 'MESH':
+            base_diffuse_path:str|None = ini_maker.texture_grabber(child)
+
+            if base_diffuse_path:
+                tex_file_name = os.path.basename(base_diffuse_path)
+                destination = os.path.join(texture_root_path, child.name, tex_file_name)
+                shutil.copy(base_diffuse_path, destination)
+
+                diffuse_path = destination
+            else:
+                diffuse_path = None
+
+            material_data = deepcopy(default_material_data.getroot())
+            
+            material_data.find("Material").attrib["Name"] = child.name
+
+            if diffuse_path:
+                material_data.find("Material").find("ParamTable").find("Tex0").attrib["Value"] = diffuse_path.split("res\\", 1)[1].replace("\\", "/")
+            else:
+                material_data.find("Material").find("ParamTable").find("Tex0").attrib["Value"] = "please/add/texture.dds"
+            
+            shader_texes = {"TexMetal": shader_textures.default_metal, "TexNormal": shader_textures.default_normal}
+            for shader_key in shader_texes:
+                tex_path = os.path.join(texture_root_path, child.name, f"{child.name}_{shader_key}.dds")
+                with open(tex_path, "wb") as tex_file:
+                    tex_file.write(base64.b64decode(shader_texes[shader_key]))
+
+                material_data.find("Material").find("ParamTable").find(shader_key).attrib["Value"] = tex_path.split("res\\", 1)[1].replace("\\", "/")
+
+            with open(os.path.join(materials_root_path, f"{child.name}.mtl"), "wb") as mat_file:
+                mat_file.write(ET.tostring(material_data, encoding='utf-8', method='xml'))
+
+    material_group_template_path = os.path.join(os.path.dirname(__file__), "tex_resource", "initial_material_group.mtg")
+    material_group_path = os.path.join(export_path, "main.mtg")
+
+    material_group = ET.parse(material_group_template_path).getroot()
+    
+    material_group.find("MaterialGroup").attrib["Name"] = "main"
+
+    def get_mtl_files():
+        ret = []
+        for file in os.scandir(materials_root_path):
+            if file.name.endswith(".mtl"):
+                ret.append(file.name)
+        return ret
+
+    mtl_files = get_mtl_files()
+    material_group.find("MaterialGroup").attrib["MaterialCount"] = str(len(mtl_files))
+
+    for n, file in enumerate(mtl_files):
+        rel_path = os.path.join(materials_root_path, file).split("res\\", 1)[1].replace("\\", "/")
+        ET.SubElement(material_group.find("MaterialGroup"), f"Material_{n}", attrib={"Path": rel_path})
+
+    io_handler.ExportGim(
+        material_group_path,
+        convert_handler.xml_to_custom_bin(convert_handler.xml_to_bfs_list(material_group))
+        )

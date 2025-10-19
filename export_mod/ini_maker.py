@@ -1,6 +1,7 @@
 import bpy
 from bpy.types import Operator, Object
 import os, re, json, base64, shutil
+from . import shader_textures
 
 def ini_maker(
         Operator: Operator,
@@ -40,37 +41,26 @@ def ini_maker(
     ini_config = {}    
     
     # # # DIFFUSE # # #
-    if len(obj.data.materials) > 0:
-        material = obj.data.materials[0]
-        
-        if material and material.use_nodes:
-            for node in material.node_tree.nodes:
-                if node.type == 'TEX_IMAGE' and node.image:
-                    t0_path = bpy.path.abspath(node.image.filepath)
-                    break
-            else:
-                t0_path = None
+    t0_path = texture_grabber(obj)
 
-        if t0_path:
-            if not os.path.isdir(os.path.join(export_path, "Texture")):
-                os.mkdir(os.path.join(export_path, "Texture"))
-                
-            shutil.copy(t0_path, os.path.join(export_path, "Texture", os.path.basename(t0_path)))
-            ini_config["diffuse_exists"] = True
-            ini_config["diffuse_path"] = os.path.join(export_path, "Texture", os.path.basename(t0_path))
-        else:
-            ini_config["diffuse_exists"] = False
-
-    dds_template = "RERTIHwAAAAHEAoABAAAAAQAAAAQAAAAAQAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAEAAAARFgxMAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAABiAAAAAwAAAAAAAAABAAAAAAAAAA"
+    if t0_path:
+        if not os.path.isdir(os.path.join(export_path, "Texture")):
+            os.mkdir(os.path.join(export_path, "Texture"))
+            
+        shutil.copy(t0_path, os.path.join(export_path, "Texture", os.path.basename(t0_path)))
+        ini_config["diffuse_exists"] = True
+        ini_config["diffuse_path"] = os.path.join(export_path, "Texture", os.path.basename(t0_path))
+    else:
+        ini_config["diffuse_exists"] = False
+   
     metal_slot = context.scene.metal_slot_selector
     normal_slot = context.scene.normal_slot_selector
 
     # # # METAL # # #
     if not context.scene.custom_metal and hashes[metal_slot]:
-        default_metal = "gEAoHA////83a8Hayqqqo="
         with open(os.path.join(export_path, "Texture", f"{hashes[metal_slot]}.dds"), "wb") as file:        
             file.write(
-                base64.b64decode(f"{dds_template}{default_metal}")
+                base64.b64decode(shader_textures.default_metal)
             )
         ini_config["metal_exists"] = True
         ini_config["metal_path"] = os.path.join(export_path, "Texture", f"{hashes[metal_slot]}.dds")
@@ -83,10 +73,9 @@ def ini_maker(
 
     # # # NORMAL # # #
     if not context.scene.custom_normal and hashes[normal_slot]:
-        default_normal = "jsdrvdbrfb/f///6+qqqo="
         with open(os.path.join(export_path, "Texture", f"{hashes[normal_slot]}.dds"), "wb") as file:
             file.write(
-                base64.b64decode(f"{dds_template}{default_normal}")
+                base64.b64decode(shader_textures.default_normal)
             )
         ini_config["normal_exists"] = True
         ini_config["normal_path"] = os.path.join(export_path, "Texture", f"{hashes[normal_slot]}.dds")
@@ -188,3 +177,19 @@ filename = {os.path.relpath(ini_config['normal_path'], export_path)}\n\n"""
     else:
         with open(ini_path, "w") as file:
             file.write(f"; ======= Overrides:\n\n{buffer_override_content}\n; ======= Resources:\n\n{resources_content}")
+
+def texture_grabber(obj):
+    if len(obj.data.materials) > 0:
+        material = obj.data.materials[0]
+        
+        if material and material.use_nodes:
+            for node in material.node_tree.nodes:
+                if node.type == 'TEX_IMAGE' and node.image:
+                    t0_path = bpy.path.abspath(node.image.filepath)
+                    break
+            else:
+                t0_path = None
+    else:
+        t0_path = None
+    
+    return t0_path

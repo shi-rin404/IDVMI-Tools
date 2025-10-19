@@ -27,18 +27,7 @@ class IDVMI_OT_Export_Neox_Mesh(bpy.types.Operator, ExportHelper):
         #     self.report({'ERROR'}, "Please select skeleton file to export!")
         #     return {'CANCELLED'}
 
-        bpy.ops.object.mode_set(mode='OBJECT')
-        arm_obj = context.active_object    
-
-        if arm_obj.type != 'ARMATURE':     
-            while arm_obj:
-                if arm_obj.type != 'ARMATURE':
-                    arm_obj = arm_obj.parent
-                else:
-                    break
-            if not arm_obj:
-                self.report({'ERROR'}, "Please select an armature that has mesh(es)")
-                return {'CANCELLED'}
+        arm_obj = get_armature(context, self)
 
         export_neox_mesh(
             export_path,
@@ -50,11 +39,21 @@ class IDVMI_OT_Export_Neox_Mesh(bpy.types.Operator, ExportHelper):
         self.report({'INFO'}, f"Export OK → {export_path}")
         return {'FINISHED'}
 
-# def parse_skeleton(skeleton_path, operator):
-#     with open(skeleton_path, "r") as skeleton:
-#         parsed = json.load(skeleton)
+def get_armature(context, operator):
+    bpy.ops.object.mode_set(mode='OBJECT')
+    arm_obj = context.active_object    
 
-#     return parsed
+    if arm_obj.type != 'ARMATURE':     
+        while arm_obj:
+            if arm_obj.type != 'ARMATURE':
+                arm_obj = arm_obj.parent
+            else:
+                break
+        if not arm_obj:
+            operator.report({'ERROR'}, "Please select an armature that has mesh(es)")
+            return {'CANCELLED'}
+    
+    return arm_obj
 
 def parse_blender_meshes(armature, flip_uv_y) -> dict:
     # --- Eksen dönüşümleri ---

@@ -56,13 +56,7 @@ class Export3DMigoto(Operator, ExportHelper):
                 if not context.scene.namespace_textbox.strip():
                     self.report({"ERROR"}, "Specify a namespace name or disable 'Clean INI' option!")
                 else:
-                    namespace = context.scene.namespace_textbox.strip()
-
-            # file_path = Path(self.filepath)
-            # vb_path = file_path.parent / (file_path.stem + ".vb")
-            # ib_path = file_path.parent / (file_path.stem + ".ib")
-            # fmt_path = file_path.parent / (file_path.stem + ".fmt")
-            # ini_path = file_path.parent / (file_path.stem + "_generated.ini")
+                    namespace = context.scene.namespace_textbox.strip().replace(" ","")
 
             obj = context.object
 
