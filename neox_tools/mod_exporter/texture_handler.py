@@ -1,11 +1,10 @@
 from copy import deepcopy
-import bpy, shutil, os, base64
+import shutil, os, base64
 import xml.etree.ElementTree as ET
 from ...export_mod import shader_textures
 from ...export_mod import ini_maker
 from ..export_ops import get_armature
 from .xml_converter import io_handler, convert_handler
-from .xml_converter.utils import formatFilePath
 
 def texture_handler(export_path, context, operator):
     armature = get_armature(context, operator)
@@ -74,11 +73,17 @@ def texture_handler(export_path, context, operator):
     mtl_files = get_mtl_files()
     material_group.find("MaterialGroup").attrib["MaterialCount"] = str(len(mtl_files))
 
-    for n, file in enumerate(mtl_files):
-        rel_path = os.path.join(materials_root_path, file).split("res\\", 1)[1].replace("\\", "/")
-        ET.SubElement(material_group.find("MaterialGroup"), f"Material_{n}", attrib={"Path": rel_path})
+    try:
+        for n, file in enumerate(mtl_files):
+            rel_path = os.path.join(materials_root_path, file).split("res\\", 1)[1].replace("\\", "/")
+            ET.SubElement(material_group.find("MaterialGroup"), f"Material_{n}", attrib={"Path": rel_path})
+    except IndexError:
+        operator.report({'ERROR'}, "Your mod folder should be inside of 'res' folder!")
+        return False
 
     io_handler.ExportGim(
         material_group_path,
         convert_handler.xml_to_custom_bin(convert_handler.xml_to_bfs_list(material_group))
         )
+    
+    return True

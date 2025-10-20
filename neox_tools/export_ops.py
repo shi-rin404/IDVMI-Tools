@@ -29,9 +29,14 @@ class IDVMI_OT_Export_Neox_Mesh(bpy.types.Operator, ExportHelper):
 
         arm_obj = get_armature(context, self)
 
+        mesh_data = parse_blender_meshes(arm_obj, flip_uv_y, self)
+
+        if not mesh_data:
+            return {'CANCELLED'}
+
         export_neox_mesh(
             export_path,
-            parse_blender_meshes(arm_obj, flip_uv_y),
+            mesh_data,
             arm_obj,
             self
         )
@@ -55,7 +60,7 @@ def get_armature(context, operator):
     
     return arm_obj
 
-def parse_blender_meshes(armature, flip_uv_y) -> dict:
+def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
     # --- Eksen dönüşümleri ---
     M_blender_to_game = axis_conversion(
     from_forward='-Y', from_up='Z',   # Blender’ın yönleri
@@ -159,9 +164,6 @@ def parse_blender_meshes(armature, flip_uv_y) -> dict:
 
             vgroups = list(child.vertex_groups)
 
-            # Bone isimlerinden sıra: name -> bone_idx (zaten var)
-            # bone_index = {b.name:i for i,b in enumerate(armature.data.bones)}
-
             # VG'leri bone sırasına göre sırala (eşleşmeyenler sona)
             sorted_vgroups = sorted(
                 vgroups,
@@ -177,36 +179,6 @@ def parse_blender_meshes(armature, flip_uv_y) -> dict:
             joints  = []
             weights = []
 
-            # for v in child.data.vertices:
-                # (rank, bone_index, weight) listesi topla
-                # triples = []
-                # for g in v.groups:
-                #     bi = vg_to_bone.get(g.group, -1)
-                #     if bi >= 0 and g.weight > 0.0:
-                        # r = vg_rank.get(g.group, 10**9)  # eşleşmeyen en sona
-                        # triples.append((r, bi, g.weight))
-
-                # Ağırlığa göre top-k seç
-                # triples.sort(key=lambda t: t[2], reverse=True)   # weight desc
-                # triples = triples[:topk]
-
-                # Pad
-                # while len(triples) < topk:
-                #     triples.append((10**9, 65535, 0.0))  # rank büyük, weight 0
-
-                # Çıktıyı bone sırasına (rank) göre sabitle
-                # triples.sort(key=lambda t: t[0])     # rank asc
-
-                # idxs = [t[1] for t in triples]
-                # wts  = [t[2] for t in triples]
-
-                # Normalize
-                # s = sum(wts)
-                # if s > 0.0:
-                #     wts = [w/s for w in wts]
-                
-                # joints.append(idxs)
-                # weights.append(wts)
             vertex_group_names = {}
             for vertex_group in child.vertex_groups:
                 vertex_group_names[vertex_group.index] = vertex_group.name
@@ -238,8 +210,12 @@ def parse_blender_meshes(armature, flip_uv_y) -> dict:
                         vertex_weights.append(0.0)
                         vertex_joints.append(65535)
                     else:
-                        vertex_weights.append(group.weight)
-                        vertex_joints.append(bone_index[vertex_group_names[group.group]])
+                        try:
+                            vertex_weights.append(group.weight)
+                            vertex_joints.append(bone_index[vertex_group_names[group.group]])
+                        except KeyError:
+                            operator.report({'ERROR'}, "Mesh bone names are not equal with the armature.")
+                            return False
                 joints.append(vertex_joints)
                 weights.append(vertex_weights)
 
