@@ -1,12 +1,12 @@
 def _draw_extract_frame(layout, scene, context, folder_box):
     folder_box.label(text="Frame Dump Folder")
     folder_box.prop(scene, "frame_dump_selector", text="")
-    layout.operator("idvmi_tools.extract_frame_dump", icon="FILE_REFRESH")
+    layout.operator("idvmi_migoto.extract_frame_dump", icon="FILE_REFRESH")
 
 def _draw_set_textures(layout, scene, context, folder_box):
     folder_box.label(text="Frame Dump Folder")
     folder_box.prop(scene, "frame_dump_selector", text="")
-    layout.operator("idvmi_tools.set_textures", icon="FILE_REFRESH")
+    layout.operator("idvmi_migoto.set_textures", icon="FILE_REFRESH")
 
 
 def _draw_export_mod(layout, scene, context, folder_box):
@@ -35,18 +35,17 @@ def _draw_export_mod(layout, scene, context, folder_box):
         box_custom_normal = layout.box()
         box_custom_normal.label(text="Custom Normal-Map Path")
         box_custom_normal.prop(scene, "normal_selector", text="")
-    layout.operator("idvmi_tools.export_mod_migoto", icon="EXPORT")
+    layout.operator("idvmi_migoto.export_mod_migoto", icon="EXPORT")
 
 
 def _draw_import_neox_mesh(layout, scene, context, folder_box):
     folder_box.label(text="NeoX Mesh")
     folder_box.prop(scene, "neox_mesh_selector", text="")
-    layout.operator("idvmi_tools.neox_importer", icon="IMPORT")
-
+    layout.operator("idvmi_neox.neox_importer", icon="IMPORT")
 
 def _draw_export_neox_mesh(layout, scene, context, folder_box):
     layout.prop(context.scene, "flip_uv_y", text="Flip UV (Y axis)")
-    layout.operator("idvmi_tools.neox_exporter", icon="EXPORT")
+    layout.operator("idvmi_neox.neox_exporter", icon="EXPORT")
 
 def _draw_export_neox_mod(layout, scene, context, folder_box):
     folder_box.label(text="Export Folder")
@@ -65,7 +64,7 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
         # Hunter Rig
         rig_selector = layout.box()
         rig_selector.label(text="Reference Gim File")
-        rig_selector.prop(scene, "neox_gim_selector", text="")    
+        rig_selector.prop(scene, "gim_selector", text="")    
 
         rig_selector.label(text="Skeleton Path")
         rig_selector.prop(context.scene, "skeleton_path", text="")
@@ -84,16 +83,19 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
     mod_name.label(text="Mod Name")
     mod_name.prop(context.scene, "neox_mod_name", text="")
 
-    layout.operator("idvmi_tools.neox_mod_exporter", icon="EXPORT")
+    layout.operator("idvmi_neox.neox_mod_exporter", icon="EXPORT")
 
 # Dispatch map to replace if/elif chain
-dispatch = {
+neox_dispatch = {    
+    'OPT_Import_Neox_Mesh': _draw_import_neox_mesh,    
+    'OPT_NeoX_Mod_Exporter': _draw_export_neox_mod,
+    'OPT_Export_Neox_Mesh': _draw_export_neox_mesh,
+}
+
+_3dm_dispatch = {
     'OPT_Extract_Frame': _draw_extract_frame,
     'OPT_Set_Textures': _draw_set_textures,
     'OPT_Export_Mod': _draw_export_mod,
-    'OPT_Import_Neox_Mesh': _draw_import_neox_mesh,
-    'OPT_Export_Neox_Mesh': _draw_export_neox_mesh,
-    'OPT_NeoX_Mod_Exporter': _draw_export_neox_mod,
 }
 
 no_folder_box = [

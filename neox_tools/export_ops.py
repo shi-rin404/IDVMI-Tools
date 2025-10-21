@@ -6,7 +6,7 @@ from bpy_extras.io_utils import ExportHelper, axis_conversion
 from .export_utils import writeuint8, writeuint16, writeuint32, writefloat
 
 class IDVMI_OT_Export_Neox_Mesh(bpy.types.Operator, ExportHelper):
-    bl_idname = "idvmi_tools.neox_exporter"
+    bl_idname = "idvmi_neox.neox_exporter"
     bl_label = "Export NeoX Mesh"
 
     # ExportHelper parametreleri
@@ -88,6 +88,8 @@ def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
     for bone in armature.data.bones:
         if bone.name in mesh_data['bone_name']:
             bones[bone_index[bone.name]] = bone    
+
+    operator.report({'INFO'}, str(sorted([key for key in bones])))
 
     for n in range(len(bones)):
         bone = bones[n]

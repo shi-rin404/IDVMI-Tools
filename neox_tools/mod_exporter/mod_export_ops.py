@@ -6,11 +6,16 @@ from .gim_handler import gim_handler
 from .mod_json_maker import mod_json_maker
 
 class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
-    bl_idname = "idvmi_tools.neox_mod_exporter"
+    bl_idname = "idvmi_neox.neox_mod_exporter"
     bl_label = "Export NeoX Mod"
 
     def execute(self, context):
         export_path = bpy.path.abspath(context.scene.export_selector)
+
+        if export_path.endswith("\\res\\mod") or export_path.endswith("/res/mod"):
+            export_path = os.path.join(export_path, context.scene.neox_mod_name)
+            os.makedirs(export_path, exist_ok=True)
+
         arm_obj = get_armature(context, self)
 
         # Export Mesh

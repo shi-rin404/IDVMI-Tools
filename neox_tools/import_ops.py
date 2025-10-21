@@ -6,7 +6,7 @@ from bpy_extras.io_utils import axis_conversion
 from math import pi
 
 class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
-    bl_idname = "idvmi_tools.neox_importer"
+    bl_idname = "idvmi_neox.neox_importer"
     bl_label = "Import NeoX Mesh"
 
     def execute(self, context):
@@ -66,7 +66,10 @@ def import_per_material(model, obj_name: str, operator):
     bone_namer = {bone_index: bone_name for bone_index, bone_name in enumerate(model['bone_name'])}
     
     # """ USAGE: parent_names[index] = parent_name """
-    parent_names = [model['bone_name'][n] if n != -1 else None for n in model['bone_parent']] 
+    parent_names = [model['bone_name'][n] if n != -1 else None for n in model['bone_parent']]
+    
+    # Synthetic root bone name placeholder
+    synthetic_root_name = None
 
     # -- Bones --
     def matrix_to_blender(matrix_4):
@@ -89,28 +92,37 @@ def import_per_material(model, obj_name: str, operator):
     bpy.ops.object.mode_set(mode='EDIT')
 
     # Create all bones first (heads only)
-    for bone_name, matrix_4 in zip(model['bone_name'], model['bone_matrix']):        
+    # Avoid zip() truncation if lists differ; create by index to ensure all names get a bone
+    for idx, bone_name in enumerate(model['bone_name']):
+        matrix_4 = model['bone_matrix'][idx]
         bone = armature_obj.data.edit_bones.new(bone_name)
         bone.head = matrix_to_blender(matrix_4)
         # Set temporary tail (will be corrected later)
-        bone.tail = bone.head + Vector((0, 0, 0.1))    
+        bone.tail = bone.head + Vector((0, 0, 0.1))
 
     # Set bone hierarchy and tails
-    for bone_name in model['bone_name']:          
-        edit_bone = armature_obj.data.edit_bones[bone_name]
-        
-        if bone_name == "biped":
-            bpy.ops.object.mode_set(mode='OBJECT')
-            operator.report({'INFO'}, f"{'biped' in armature_obj.data.bones}")
-            bpy.ops.object.mode_set(mode='EDIT')
-            edit_bone = armature_obj.data.edit_bones[bone_name]
+    for bone_name in model['bone_name']:                  
+        edit_bone = armature_obj.data.edit_bones[bone_name]        
 
-        # Set parent
+        # Set parent (be explicit so index 0 isn't treated as falsy)
         parent_name = find_parent(bone_name)
-        if parent_name:
+        if parent_name is not None:
             edit_bone.parent = armature_obj.data.edit_bones[parent_name]
-        else:
-            edit_bone.parent = None            
+        else:            
+            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.context.view_layer.update()
+            bpy.ops.object.mode_set(mode='EDIT')
+        #     candidate = bone_name
+        #     counter = 1
+        #     existing_names = set(armature_obj.data.edit_bones.keys())
+        #     while candidate in existing_names:
+        #         candidate = f"{bone_name}_{counter}"
+        #         counter += 1
+        #     root_bone = armature_obj.data.edit_bones.new(candidate)
+        #     root_bone.head = armature_obj.data.edit_bones[bone_name].head
+        #     root_bone.tail = armature_obj.data.edit_bones[bone_name].head + Vector((0.0, 0.0, 0.1))
+        #     bone_name = candidate
+        #     armature_obj.data.edit_bones.remove(armature_obj.data.edit_bones[candidate])
 
         # Set tail to first child's head, or offset from head if no child
         child_index = find_child(bone_name)

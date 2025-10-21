@@ -1,4 +1,5 @@
 import bpy
+from ..neox_tools.utils.game_dir_detector import check_game_directory
 
 def register_props():
     bpy.types.Scene.neox_mod_name = bpy.props.StringProperty(
@@ -68,18 +69,26 @@ def register_props():
         default=""     # .blend'e göre relatif
     )
 
-    bpy.types.Scene.action_selector = bpy.props.EnumProperty(
+    bpy.types.Scene.neox_action_selector = bpy.props.EnumProperty(
         name="Action Selector",
         description="Select the action you want to do",
         items=[            
-            ('OPT_Import_Neox_Mesh', "Import NeoX Mesh", "Imports .mesh file"),
-            ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),
-            ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),
+            ('OPT_Import_Neox_Mesh', "Import NeoX Mesh", "Imports .mesh file"),            
+            ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),  
+            ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),      
+        ],
+        default='OPT_Import_Neox_Mesh'
+    )
+
+    bpy.types.Scene.migoto_action_selector = bpy.props.EnumProperty(
+        name="Action Selector",
+        description="Select the action you want to do",
+        items=[            
             ('OPT_Extract_Frame', "Extract Frame Dump (3DM)", "Auto selects the character materials. Selected materials will be copied into \"YourDumpFolder\\Character\" "),
             ('OPT_Set_Textures', "Set Textures (3DM)", "Auto sets t0 textures to your dumped mesh objects. Skips unvisible ones."),
             ('OPT_Export_Mod', "Export 3DM Mod", "Select a folder to extract your mod"),                        
         ],
-        default='OPT_Import_Neox_Mesh'
+        default='OPT_Extract_Frame'
     )
 
     # Tek ortak klasör seçici: N-Panel'de çizilecek
@@ -94,7 +103,7 @@ def register_props():
         name="Export Folder Selector",
         description="Select a folder",
         subtype='DIR_PATH',
-        default=""     # .blend'e göre relatif
+        default=check_game_directory()     # .blend'e göre relatif
     )
 
     bpy.types.Scene.clean_ini = bpy.props.BoolProperty(

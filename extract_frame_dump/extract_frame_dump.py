@@ -22,7 +22,7 @@ def _ensure_dir_ok(path, *, must_exist=True, must_be_writable=False):
 
 # ---------- OP: Extract ----------
 class IDVMI_OT_extract_frame_dump(bpy.types.Operator):
-    bl_idname = "idvmi_tools.extract_frame_dump"
+    bl_idname = "idvmi_migoto.extract_frame_dump"
     bl_label = "Extract Frame Dump"
 
     def execute(self, context):

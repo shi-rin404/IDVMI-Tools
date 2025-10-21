@@ -3,7 +3,7 @@ from ..extract_frame_dump.extract_frame_dump import _ensure_dir_ok
 
 # ---------- OP: Set Textures ----------
 class IDVMI_OT_set_textures(bpy.types.Operator):
-    bl_idname = "idvmi_tools.set_textures"
+    bl_idname = "idvmi_migoto.set_textures"
     bl_label = "Set Textures"
 
     def execute(self, context):

@@ -36,7 +36,7 @@ from .ini_maker import ini_maker
 class Export3DMigoto(Operator, ExportHelper):
     """Export a mesh for re-injection into a game with 3DMigoto"""
 
-    bl_idname = "idvmi_tools.export_mod_migoto"
+    bl_idname = "idvmi_migoto.export_mod_migoto"
     bl_label = "Export Mod"
 
     filename_ext = ".vb0"

@@ -1,5 +1,4 @@
 <NeoX>
     <MaterialGroup MaterialCount="1" Name="cp_e_fei_head" Version="0.0000,0.0000,1.0000,4.0000">
-        <Material_0 Path="mod/Lana/materials/bangs.mtl" />
     </MaterialGroup>
 </NeoX>
