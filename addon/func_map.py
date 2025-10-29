@@ -1,3 +1,5 @@
+import bpy
+
 def _draw_extract_frame(layout, scene, context, folder_box):
     folder_box.label(text="Frame Dump Folder")
     folder_box.prop(scene, "frame_dump_selector", text="")
@@ -57,10 +59,8 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
     mod_options = layout.box()
     mod_options.prop(scene, "neox_rig_selector")
 
-    known_rigs = ['woman', 'male', 'little_girl']
-
     # Rig
-    if context.scene.neox_rig_selector not in known_rigs:
+    if context.scene.neox_rig_selector == 'custom':
         # Hunter Rig
         rig_selector = layout.box()
         rig_selector.label(text="Reference Gim File")
@@ -72,12 +72,21 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
         rig_selector.label(text="AnimConfig Location")
         rig_selector.prop(context.scene, "animconfig_location", text="")
 
+        
         if context.scene.animconfig_location == "remote":
             rig_selector.label(text="AnimConfig Path")
             rig_selector.prop(context.scene, "animconfig_path", text="")
-        elif context.scene.animconfig_location == "local":
-            rig_selector.label("AnimConfig File")
+        elif context.scene.animconfig_location == "local":              
+            rig_selector.label(text="AnimConfig File")
             rig_selector.prop(context.scene, "animconfig_selector", text="")
+    else:
+        mod_options.prop(scene, "custom_gim_bool", text="Custom Gim")
+
+        if scene.custom_gim_bool:
+            rig_selector = layout.box()
+            rig_selector.label(text="Reference Gim File")
+            rig_selector.prop(scene, "gim_selector", text="") 
+
 
     mod_name = layout.box()
     mod_name.label(text="Mod Name")
@@ -85,11 +94,21 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
 
     layout.operator("idvmi_neox.neox_mod_exporter", icon="EXPORT")
 
+def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
+    folder_box.label(text="Gim File")
+    folder_box.prop(scene, "socket_default_gim_selector", text="")
+    folder_box.label(text="Socket Name")
+    folder_box.prop(scene, "default_socket_name", text="")
+    folder_box.label(text="Gim Path")
+    folder_box.prop(scene, "gim_path", text="")
+    folder_box.operator("idvmi_neox.socket_ops", icon="MODIFIER")
+
 # Dispatch map to replace if/elif chain
 neox_dispatch = {    
     'OPT_Import_Neox_Mesh': _draw_import_neox_mesh,    
     'OPT_NeoX_Mod_Exporter': _draw_export_neox_mod,
     'OPT_Export_Neox_Mesh': _draw_export_neox_mesh,
+    'OPT_Socket_Operations': _draw_socket_operations,
 }
 
 _3dm_dispatch = {

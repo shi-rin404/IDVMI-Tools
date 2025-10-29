@@ -11,9 +11,9 @@ def gim_handler(export_path:str, rig_info:dict, armature):
     submesh = decoded_gim_data.find("SubMesh")
     submesh.clear()
     for child in armature.children_recursive:        
-        if child.type == 'MESH':
-            n += 1
+        if child.type == 'MESH':            
             ET.SubElement(submesh, f"Sub{n}", {"BoundingCenter":"0.0001,15.3959,0.3956", "BoundingHalf":"1.2504,1.3515,0.8151", "ForceBatch":"false", "IsSkin4S":"false", "MtlIdx":f"{n}", "Name":child.name, "RenderGroup":"0", "RenderOffset":"0", "ShadowBias":"0", "ShadowNormalBias":"0"})
+            n += 1
 
     # Rig
     decoded_gim_data.find("SkeletonFile").find("FileName").attrib["Value"] = rig_info["skeleton"]

@@ -22,7 +22,7 @@ class IDVMI_Neox_tools(bpy.types.Panel):
             func(layout, scene, context, folder_selectors)
 
 class IDVMI_3DM_tools(bpy.types.Panel):
-    bl_label = "IDVMI 3DM"
+    bl_label = "IDVMI Migoto"
     bl_idname = "idvmi_migoto"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"

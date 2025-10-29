@@ -2,6 +2,7 @@ from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
 import bpy
 import os
 from mathutils import Matrix, Vector
+from math import isfinite
 from bpy_extras.io_utils import axis_conversion
 from math import pi
 
@@ -21,16 +22,13 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
                     mesh_file.seek(0)
                     is_parser_tried[parser] = True
                     parser(model, mesh_file, self)
-                    for weights in model['vertex_weight']:
-                        for weight in weights:
-                            if type(weight) != float or weight > 1.0 or weight < 0.0:
-                                self.report({'ERROR'}, f"Incorrect weights")            
-                                continue
+                    check_weights(model['vertex_weight'], self)
                     break
                 except Exception as e:
                     self.report({'ERROR'}, f"{e}")                    
                     model = {}
                     continue
+
 
         if model == {}:
             self.report({'ERROR'}, "Model can't be decoded")
@@ -43,6 +41,13 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
         self.report({'INFO'}, f"Import OK → {mesh_path}")
         return {'FINISHED'}
     
+def check_weights(weight_data, operator):
+    for weights in weight_data:
+        for weight in weights:
+            if type(weight) != float or weight > 1.0 or weight < 0.0:
+                operator.report({'ERROR'}, f"Incorrect weights. Example weight: {weight}")            
+                return False
+    return True
         
 def import_per_material(model, obj_name: str, operator):
     # --- Axis conversation ---
@@ -67,9 +72,6 @@ def import_per_material(model, obj_name: str, operator):
     
     # """ USAGE: parent_names[index] = parent_name """
     parent_names = [model['bone_name'][n] if n != -1 else None for n in model['bone_parent']]
-    
-    # Synthetic root bone name placeholder
-    synthetic_root_name = None
 
     # -- Bones --
     def matrix_to_blender(matrix_4):
@@ -112,17 +114,6 @@ def import_per_material(model, obj_name: str, operator):
             bpy.ops.object.mode_set(mode='OBJECT')
             bpy.context.view_layer.update()
             bpy.ops.object.mode_set(mode='EDIT')
-        #     candidate = bone_name
-        #     counter = 1
-        #     existing_names = set(armature_obj.data.edit_bones.keys())
-        #     while candidate in existing_names:
-        #         candidate = f"{bone_name}_{counter}"
-        #         counter += 1
-        #     root_bone = armature_obj.data.edit_bones.new(candidate)
-        #     root_bone.head = armature_obj.data.edit_bones[bone_name].head
-        #     root_bone.tail = armature_obj.data.edit_bones[bone_name].head + Vector((0.0, 0.0, 0.1))
-        #     bone_name = candidate
-        #     armature_obj.data.edit_bones.remove(armature_obj.data.edit_bones[candidate])
 
         # Set tail to first child's head, or offset from head if no child
         child_index = find_child(bone_name)
@@ -133,14 +124,6 @@ def import_per_material(model, obj_name: str, operator):
         else:
             # No child found, set tail to offset from head
             edit_bone.tail = edit_bone.head + Vector((0, 0, 0.1))
-
-    # bpy.ops.object.mode_set(mode='OBJECT')
-
-    # """ USAGE: armature_bone_index[name] = bone_index """
-    # armature_bone_index = {bone.name: bone_index for bone_index, bone in enumerate(armature_obj.data.bones)}
-    
-    # """ USAGE: armature_bone_namer[index] = bone_name """
-    # armature_bone_namer = {bone_index: bone.name for bone_index, bone in enumerate(armature_obj.data.bones)}
 
     # Custom Properties
     bpy.ops.object.mode_set(mode='POSE')
@@ -198,15 +181,56 @@ def import_per_material(model, obj_name: str, operator):
 
         # Create mesh geometry
         mesh_data.from_pydata(vertices, [], faces)
-        
-        # FIX: Set custom normals properly
+        mesh_data.update()
+        # Validate mesh to remove degenerate geometry that can crash later C-APIs
+        try:
+            mesh_data.validate()
+        except Exception:
+            # validation can fail silently; continue defensively
+            pass
+
+        # FIX: Set custom normals properly (safe)
         mesh_data.use_auto_smooth = True
-        # mesh_data.auto_smooth_angle = 3.14159  # 180 degrees
         mesh_data.auto_smooth_angle = pi  # 180 degrees
-        
+
+        # Ensure we're in OBJECT mode before calling low-level mesh APIs
+        # bpy.ops.object.mode_set(mode='OBJECT')
+
         mesh_data.calc_loop_triangles()
         mesh_data.calc_normals_split()
-        mesh_data.normals_split_custom_set_from_vertices(normals)
+
+        # Safety check + exception handling to avoid C-level crash
+        try:
+            # Build sanitized list of mathutils.Vector normals            
+            normals_vec = []
+            for n in normals:
+                try:
+                    v = Vector(n) if not isinstance(n, Vector) else n
+                except Exception:
+                    raise ValueError("Normal is not convertible to Vector")
+
+                if len(v) < 3:
+                    raise ValueError("Normal has fewer than 3 components")
+
+                # check for finite components (no inf/nan)
+                if not all(isfinite(float(c)) for c in (v[0], v[1], v[2])):
+                    raise ValueError("Normal contains non-finite component")
+
+                # ensure exactly 3 components per Vector (Blender expects 3)
+                normals_vec.append(Vector((float(v[0]), float(v[1]), float(v[2]))))
+
+            # Only call the C-API if counts match and data was sanitized
+            if len(normals_vec) == len(mesh_data.vertices):
+                mesh_data.normals_split_custom_set_from_vertices(normals_vec)
+            else:
+                operator.report(
+                    {'WARNING'},
+                    f"Normals count mismatch for mesh {mesh_index}: {len(normals_vec)} vs {len(mesh_data.vertices)}"
+                )
+        except Exception as e:
+            # Don't let a bad normals array crash Blender; report and skip
+            operator.report({'ERROR'}, f"Skipping custom normals for mesh {mesh_index}: {e}")
+
         mesh_data.update()
 
         # UV Mapping - FIX: Proper UV assignment

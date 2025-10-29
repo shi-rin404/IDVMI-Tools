@@ -14,7 +14,8 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
 
         if export_path.endswith("\\res\\mod") or export_path.endswith("/res/mod"):
             export_path = os.path.join(export_path, context.scene.neox_mod_name)
-            os.makedirs(export_path, exist_ok=True)
+        
+        os.makedirs(export_path, exist_ok=True)
 
         arm_obj = get_armature(context, self)
 
@@ -26,12 +27,13 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
         if not mesh_data:
             return {'CANCELLED'}
 
-        export_neox_mesh(
+        if not export_neox_mesh(
             bpy.path.abspath(os.path.join(export_path, "main.mesh")),
             mesh_data,
             arm_obj,
             self
-        )
+        ):
+            return {'CANCELLED'}
 
         # Export Textures
         if not texture_handler(export_path, context, self):

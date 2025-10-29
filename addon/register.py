@@ -2,6 +2,43 @@ import bpy
 from ..neox_tools.utils.game_dir_detector import check_game_directory
 
 def register_props():
+    bpy.types.Scene.custom_gim_bool = bpy.props.BoolProperty(
+        name="Custom Gim",
+        description="You can choose custom gim to export your mod",
+        default=False
+    )
+
+    bpy.types.Scene.gim_path = bpy.props.StringProperty(
+        name="Gim File Path",
+        description="Insert the gim path of your character. You can use forward or backward slash.",
+        default=""
+    )
+
+    bpy.types.Scene.default_socket_name = bpy.props.StringProperty(
+        name="Socket Name",
+        description="Name of your socket",
+        default=""
+    )
+
+    bpy.types.Scene.socket_default_gim_selector = bpy.props.StringProperty(
+        name="Gim File Selector",
+        description="Select a .gim file",
+        subtype='FILE_PATH',
+        default=""     # .blend'e göre relatif
+    )
+
+    bpy.types.Scene.neox_rig_selector = bpy.props.EnumProperty(
+        name="Rig Selector",
+        description="Select your character rig",
+        items=[            
+            ('woman', "Woman", "Woman rig"),
+            ('male', "Male", "Male rig"),
+            ('little_girl', "Little Girl", "Little Girl rig"),
+            ('custom', "Custom", "Custom rig"),
+        ],
+        default='woman'
+    )  
+
     bpy.types.Scene.neox_mod_name = bpy.props.StringProperty(
         name="Mod Name",
         description="Name of your mod",
@@ -42,19 +79,7 @@ def register_props():
         description="Select a .gim file",
         subtype='FILE_PATH',
         default=""     # .blend'e göre relatif
-    )
-
-    bpy.types.Scene.neox_rig_selector = bpy.props.EnumProperty(
-        name="Rig Selector",
-        description="Select your character rig",
-        items=[            
-            ('woman', "Woman", "Woman rig"),
-            ('male', "Male", "Male rig"),
-            ('little_girl', "Little Girl", "Little Girl rig"),
-            ('hunter', "Hunter", "Hunter rig"),
-        ],
-        default='woman'
-    )    
+    )  
 
     bpy.types.Scene.flip_uv_y = bpy.props.BoolProperty(
         name="Flip UV (Y axis)",
@@ -75,7 +100,8 @@ def register_props():
         items=[            
             ('OPT_Import_Neox_Mesh', "Import NeoX Mesh", "Imports .mesh file"),            
             ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),  
-            ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),      
+            ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),     
+            ('OPT_Socket_Operations', "Socket Operations", "Socket editor GUI"),     
         ],
         default='OPT_Import_Neox_Mesh'
     )

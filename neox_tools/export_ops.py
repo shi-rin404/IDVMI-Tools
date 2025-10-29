@@ -1,3 +1,4 @@
+import struct
 import bpy, os , math
 import bmesh
 from mathutils import Matrix, Vector
@@ -21,12 +22,6 @@ class IDVMI_OT_Export_Neox_Mesh(bpy.types.Operator, ExportHelper):
         export_path = bpy.path.abspath(self.filepath)
         flip_uv_y = context.scene.flip_uv_y
 
-        # skeleton_path = bpy.path.abspath(context.scene.neox_skeleton_selector)
-
-        # if not skeleton_path.strip():
-        #     self.report({'ERROR'}, "Please select skeleton file to export!")
-        #     return {'CANCELLED'}
-
         arm_obj = get_armature(context, self)
 
         mesh_data = parse_blender_meshes(arm_obj, flip_uv_y, self)
@@ -34,16 +29,17 @@ class IDVMI_OT_Export_Neox_Mesh(bpy.types.Operator, ExportHelper):
         if not mesh_data:
             return {'CANCELLED'}
 
-        export_neox_mesh(
+        if not export_neox_mesh(
             export_path,
             mesh_data,
             arm_obj,
             self
-        )
-
+        ):
+            return {'CANCELLED'}
+        
         self.report({'INFO'}, f"Export OK → {export_path}")
         return {'FINISHED'}
-
+    
 def get_armature(context, operator):
     bpy.ops.object.mode_set(mode='OBJECT')
     arm_obj = context.active_object    
@@ -70,7 +66,6 @@ def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
     M_blender_to_game = Matrix.Rotation(math.pi, 4, 'X') @ M_blender_to_game
 
     M_vert = M_blender_to_game.to_3x3()
-    M_norm  = (M_blender_to_game.inverted().transposed()).to_3x3()
 
     mesh_data = {}
 
@@ -81,7 +76,6 @@ def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
     mesh_data['bone_original_matrix'] = armature['Neox:BoneMatrix']
 
     bone_index = {name: idx for idx, name in enumerate(mesh_data['bone_name'])}
-    # bone_name = {idx: name for idx, name in enumerate(mesh_data['bone_name'])}
 
     bones = {}
 
@@ -89,16 +83,12 @@ def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
         if bone.name in mesh_data['bone_name']:
             bones[bone_index[bone.name]] = bone    
 
-    operator.report({'INFO'}, str(sorted([key for key in bones])))
-
     for n in range(len(bones)):
         bone = bones[n]
         if bone.parent:
             mesh_data['bone_parent'].append(bone_index[bone.parent.name])
         else:
             mesh_data['bone_parent'].append(65535)
-        # M_game_global = M_blender_to_game.inverted() @ armature.matrix_world @ bone.matrix_local @ M_blender_to_game
-        # mesh_data['bone_original_matrix'].append(M_game_global.transposed())
 
     mesh_data['mesh'] = []
     for child in armature.children_recursive:
@@ -220,20 +210,6 @@ def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
                             return False
                 joints.append(vertex_joints)
                 weights.append(vertex_weights)
-
-            # if child.name.endswith("0"):
-            #     seen = {}
-            #     for n, double in enumerate(zip(joints, weights)):
-            #         _joints, _weights = double
-            #         for joint, weight in zip(_joints, _weights):
-            #             if joint not in seen:
-            #                 seen[joint] = []
-            #             if joint != 65535:
-            #                 seen[joint].append(weight)
-                
-            #     max_key = max(seen, key=lambda k: len(seen[k]))
-            #     bone_name = {bone_index[key]:key for key in bone_index}
-            #     operator.report({'INFO'}, f"{max_key} = {bone_name[max_key]}")
             
             mesh_data['mesh'].append({'position': positions, 'normal': normals, 'tangent': vert_tangent, 'face': faces, 'uv': uv_vertex, 'vertex_joint': joints, 'vertex_joint_weight': weights})
     
@@ -241,148 +217,136 @@ def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
     
 def export_neox_mesh(export_path:os.PathLike, mesh_data:dict, arm_obj, operator):
     bpy.ops.object.mode_set(mode='OBJECT')
-        
-    with open(export_path, "wb") as file:
-        file_data = bytearray()
 
-        file_data += b"\x34\x80\xC8\xBB" # Magic Number
-        file_data += b"\x04\x00\x05\x00" # File Version
-        file_data += writeuint32(1) # Bone Exist [file_version_mask + patch_version + mesh_type(skeletal)]
+    try:   
+        with open(export_path, "wb") as file:
+            file_data = bytearray()
 
-        bone_count = len(mesh_data['bone_name'])
-        file_data += writeuint16(bone_count)
+            file_data += b"\x34\x80\xC8\xBB" # Magic Number
+            file_data += b"\x04\x00\x05\x00" # File Version
+            file_data += writeuint32(1) # Bone Exist [file_version_mask + patch_version + mesh_type(skeletal)]
 
-        for parent_idx in mesh_data['bone_parent']:
-            file_data += writeuint16(parent_idx)
-        # for parent in arm_obj['NeoX:BoneParent']:
-        #     parent = 65535 if parent == -1 else parent
-        #     file_data += writeuint16(parent)
+            bone_count = len(mesh_data['bone_name'])
+            file_data += writeuint16(bone_count)
 
-        for n in range(bone_count):
-            file_data += mesh_data['bone_name'][n].encode('utf-8').ljust(32, b"\x00")
-        # for n in range(bone_count):
-        #     file_data += arm_obj['NeoX:BoneOrder'][n].encode('utf-8').ljust(32, b"\x00")
+            for parent_idx in mesh_data['bone_parent']:
+                file_data += writeuint16(parent_idx)
+            # for parent in arm_obj['NeoX:BoneParent']:
+            #     parent = 65535 if parent == -1 else parent
+            #     file_data += writeuint16(parent)
 
-        if "NeoX:BoundingInfo" not in arm_obj or not arm_obj["NeoX:BoundingInfo"]:
-            file_data += writeuint8(0)
-        else:
-            file_data += writeuint8(1)
-            bpy.context.view_layer.objects.active = arm_obj
-            arm_obj.select_set(True)
-            bpy.ops.object.mode_set(mode='POSE')
-            for pbone in arm_obj.pose.bones:
-                try:
-                    for coordinate in pbone["NeoX:BoundingInfo"]:
-                        file_data += writefloat(coordinate)
-                except KeyError:
-                    operator.report({'ERROR'}, "Adding/Deleting bones isn't supported for now")
-                    return {'CANCELLED'}
-            bpy.ops.object.mode_set(mode='OBJECT')
+            for n in range(bone_count):
+                file_data += mesh_data['bone_name'][n].encode('utf-8').ljust(32, b"\x00")
+            # for n in range(bone_count):
+            #     file_data += arm_obj['NeoX:BoneOrder'][n].encode('utf-8').ljust(32, b"\x00")
 
-        # for bone in mesh_data['bone_original_matrix']:
-        #     for coordinate in bone:                
-        #         x, y, z, w = coordinate
-        #         file_data += writefloat(x)
-        #         file_data += writefloat(y)
-        #         file_data += writefloat(z)
-        #         file_data += writefloat(w)
-        for matrixes in arm_obj['Neox:BoneMatrix']:
-            for matrix in matrixes:
-                file_data += writefloat(matrix)
+            if "NeoX:BoundingInfo" not in arm_obj or not arm_obj["NeoX:BoundingInfo"]:
+                file_data += writeuint8(0)
+            else:
+                file_data += writeuint8(1)
+                bpy.context.view_layer.objects.active = arm_obj
+                arm_obj.select_set(True)
+                bpy.ops.object.mode_set(mode='POSE')
+                for pbone in arm_obj.pose.bones:
+                    try:
+                        for coordinate in pbone["NeoX:BoundingInfo"]:
+                            file_data += writefloat(coordinate)
+                    except KeyError:
+                        operator.report({'ERROR'}, "Adding/Deleting bones isn't supported for now")
+                        return {'CANCELLED'}
+                bpy.ops.object.mode_set(mode='OBJECT')
 
-        file_data += writeuint8(0) # has_binding_info
-        table_offset = len(file_data)
-        file_data += writeuint32(0) # table_offset // will be updated
+            for matrixes in arm_obj['Neox:BoneMatrix']:
+                for matrix in matrixes:
+                    file_data += writefloat(matrix)
 
-        vertex_count = 0
-        face_count = 0
+            file_data += writeuint8(0) # has_binding_info
+            table_offset = len(file_data)
+            file_data += writeuint32(0) # table_offset // will be updated
 
-        for mesh_info in mesh_data['mesh']:
-            vtx_count = len(mesh_info['position'])
-            file_data += writeuint32(vtx_count)
-            vertex_count += vtx_count
+            vertex_count = 0
+            face_count = 0
 
-            fce_count = len(mesh_info['face'])
-            file_data += writeuint32(fce_count)
-            face_count += fce_count
+            for mesh_info in mesh_data['mesh']:
+                vtx_count = len(mesh_info['position'])
+                file_data += writeuint32(vtx_count)
+                vertex_count += vtx_count
 
-            file_data += writeuint8(1) # uv_channel_count
-            file_data += writeuint8(0) # has_color
+                fce_count = len(mesh_info['face'])
+                file_data += writeuint32(fce_count)
+                face_count += fce_count
 
-        file_data += writeuint16(1) # lod_new_v
-        file_data += writeuint32(vertex_count)
-        file_data += writeuint32(face_count)
+                file_data += writeuint8(1) # uv_channel_count
+                file_data += writeuint8(0) # has_color
 
-        for mesh_info in mesh_data['mesh']:
-            for position in mesh_info['position']:
-                x, y, z = position
-                file_data += writefloat(x)
-                file_data += writefloat(y)
-                file_data += writefloat(z)
-        # for positions in arm_obj['NeoX:OriginalPositions']:
-        #     for position in positions:
-        #         file_data += writefloat(position)
+            file_data += writeuint16(1) # lod_new_v
+            file_data += writeuint32(vertex_count)
+            file_data += writeuint32(face_count)
 
-        for mesh_info in mesh_data['mesh']:
-            for normal in mesh_info['normal']:
-                x, y, z = normal
-                file_data += writefloat(x)
-                file_data += writefloat(y)
-                file_data += writefloat(z)        
+            for mesh_info in mesh_data['mesh']:
+                for position in mesh_info['position']:
+                    for point in position:
+                        file_data += writefloat(point)
+                    # file_data += writefloat(x)
+                    # file_data += writefloat(y)
+                    # file_data += writefloat(z)
 
-        file_data += writeuint16(1) # has tangent
-        for mesh_info in mesh_data['mesh']:
-            for tangent in mesh_info['tangent']:
-                x, y, z = tangent
-                file_data += writefloat(x)
-                file_data += writefloat(y)
-                file_data += writefloat(z)
+            for mesh_info in mesh_data['mesh']:
+                for normal in mesh_info['normal']:
+                    for point in normal:
+                        file_data += writefloat(point)
+                    # file_data += writefloat(x)
+                    # file_data += writefloat(y)
+                    # file_data += writefloat(z)
 
-        first_index = 0
-        for mesh_info in mesh_data['mesh']:
-            for face in mesh_info['face']:
-                v1, v2, v3 = face
-                file_data += writeuint16(v1 + first_index)
-                file_data += writeuint16(v2 + first_index)
-                file_data += writeuint16(v3 + first_index)
-            first_index += len(mesh_info['position'])
-        # for positions in arm_obj['NeoX:OriginalFaces']:
-        #     for position in positions:
-        #         file_data += writeuint16(position)
+            file_data += writeuint16(1) # has tangent
+            for mesh_info in mesh_data['mesh']:
+                for tangent in mesh_info['tangent']:
+                    for point in tangent:
+                        file_data += writefloat(point)
+                    # file_data += writefloat(x)
+                    # file_data += writefloat(y)
+                    # file_data += writefloat(z)
 
-        for mesh_info in mesh_data['mesh']:
-            for uv in mesh_info['uv']:
-                u, v = uv
-                file_data += writefloat(u)
-                file_data += writefloat(v)
+            first_index = 0
+            for mesh_info in mesh_data['mesh']:
+                for face in mesh_info['face']:                
+                    for point in face:                
+                        file_data += writeuint16(point + first_index)
+                first_index += len(mesh_info['position'])
 
-        # vertex color skipped
+            for mesh_info in mesh_data['mesh']:
+                for uv in mesh_info['uv']:
+                    for point in uv:
+                        file_data += writefloat(point)
+                    # file_data += writefloat(u)
+                    # file_data += writefloat(v)
 
-        for mesh_info in mesh_data['mesh']:
-            for vertex_joint in mesh_info['vertex_joint']:
-                vg1, vg2, vg3, vg4 = vertex_joint
-                file_data += writeuint16(vg1)
-                file_data += writeuint16(vg2)
-                file_data += writeuint16(vg3)
-                file_data += writeuint16(vg4)
-        # for joints in arm_obj['NeoX:OriginalJoints']:
-        #     for joint in joints:
-        #         file_data += writeuint16(joint)
+            # vertex color skipped
+            for mesh_info in mesh_data['mesh']:
+                for vertex_joint in mesh_info['vertex_joint']:
+                    for joint in vertex_joint:
+                        file_data += writeuint16(joint)
 
-        for mesh_info in mesh_data['mesh']:
-            for vertex_joint_weight in mesh_info['vertex_joint_weight']:
-                vg1, vg2, vg3, vg4 = vertex_joint_weight                
-                file_data += writefloat(vg1)
-                file_data += writefloat(vg2)
-                file_data += writefloat(vg3)
-                file_data += writefloat(vg4)
-        # for weights in arm_obj['NeoX:OriginalWeights']:
-        #     for weight in weights:
-        #         file_data += writefloat(weight)
+            for mesh_info in mesh_data['mesh']:
+                for vertex_joint_weight in mesh_info['vertex_joint_weight']:
+                    for weight in vertex_joint_weight:
+                        file_data += writefloat(weight)
 
-        file_data += arm_obj['NeoX:BoneTail']
+                    # vg1, vg2, vg3, vg4 = vertex_joint_weight                                    
+                    # file_data += writefloat(vg1)
+                    # file_data += writefloat(vg2)
+                    # file_data += writefloat(vg3)
+                    # file_data += writefloat(vg4)
 
-        file_data[table_offset:table_offset+4] = writeuint32(len(file_data))
-        file_data += arm_obj['NeoX:LODTable']
+            file_data += arm_obj['NeoX:BoneTail']
 
-        file.write(file_data)
+            file_data[table_offset:table_offset+4] = writeuint32(len(file_data))
+            file_data += arm_obj['NeoX:LODTable']
+
+            file.write(file_data)
+    except Exception as e:
+            operator.report({'ERROR'}, f"[export_neox_mesh] {str(e)}")
+            return False
+
+    return True
