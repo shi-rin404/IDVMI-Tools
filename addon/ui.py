@@ -15,11 +15,14 @@ class IDVMI_Neox_tools(bpy.types.Panel):
         # Action Selection
         layout.prop(scene, "neox_action_selector")
         
-        action = scene.neox_action_selector
-        func = func_map.neox_dispatch.get(action)
-        if func is not None:
-            folder_selectors = layout.box() if scene.neox_action_selector not in func_map.no_folder_box else None
-            func(layout, scene, context, folder_selectors)
+        try:
+            action = scene.neox_action_selector
+            func = func_map.neox_dispatch.get(action)
+            if func is not None:
+                folder_selectors = layout.box() if scene.neox_action_selector not in func_map.no_folder_box else None
+                func(layout, scene, context, folder_selectors)
+        except Exception as e:
+            layout.label(text=str(e))
 
 class IDVMI_3DM_tools(bpy.types.Panel):
     bl_label = "IDVMI Migoto"

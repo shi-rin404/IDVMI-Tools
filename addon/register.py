@@ -2,6 +2,23 @@ import bpy
 from ..neox_tools.utils.game_dir_detector import check_game_directory
 
 def register_props():
+    bpy.types.Scene.socket_source_gim_selector = bpy.props.StringProperty(
+        name="Source Gim File Selector",
+        description="Select a .gim file",
+        subtype='FILE_PATH',
+        default=""     # .blend'e göre relatif
+    )
+
+    bpy.types.Scene.socket_action_selector = bpy.props.EnumProperty(
+        name="Socket Action Selector",
+        description="Select your socket action",
+        items=[            
+            ('bind_gim', "Bind Gim", "Bind your gim to a specific socket"),
+            ('copy_socket', "Copy Socket", "Copy a socket from another gim"),
+        ],
+        default='bind_gim'
+    )  
+
     bpy.types.Scene.custom_gim_bool = bpy.props.BoolProperty(
         name="Custom Gim",
         description="You can choose custom gim to export your mod",

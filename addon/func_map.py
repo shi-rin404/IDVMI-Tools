@@ -95,13 +95,38 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
     layout.operator("idvmi_neox.neox_mod_exporter", icon="EXPORT")
 
 def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
-    folder_box.label(text="Gim File")
-    folder_box.prop(scene, "socket_default_gim_selector", text="")
-    folder_box.label(text="Socket Name")
-    folder_box.prop(scene, "default_socket_name", text="")
-    folder_box.label(text="Gim Path")
-    folder_box.prop(scene, "gim_path", text="")
-    folder_box.operator("idvmi_neox.socket_ops", icon="MODIFIER")
+    layout.prop(context.scene, "socket_action_selector", text="Socket Action")        
+
+    folder_box = layout.box()
+    def bind_gim_to_socket(_folder_box_):
+        _folder_box_.label(text="Gim File")
+        _folder_box_.prop(scene, "socket_default_gim_selector", text="")
+        _folder_box_.label(text="Socket Name")
+        _folder_box_.prop(scene, "default_socket_name", text="")
+        _folder_box_.label(text="Gim Path")
+        _folder_box_.prop(scene, "gim_path", text="")
+        
+        layout.operator("idvmi_neox.bind_gim", icon="MODIFIER")
+
+    def copy_socket(_folder_box_):
+        _folder_box_.label(text="From (Gim File)")
+        _folder_box_.prop(scene, "socket_source_gim_selector", text="")
+        _folder_box_.label(text="To (Gim File)")
+        _folder_box_.prop(scene, "socket_default_gim_selector", text="")
+        _folder_box_.label(text="Socket Name")
+        _folder_box_.prop(scene, "default_socket_name", text="")
+
+        layout.operator("idvmi_neox.copy_socket", icon="MODIFIER")
+
+    socket_dispatch = {
+        'bind_gim': bind_gim_to_socket,
+        'copy_socket': copy_socket
+    }
+
+    action = context.scene.socket_action_selector
+    func = socket_dispatch.get(action)
+    if func is not None:
+        func(folder_box)
 
 # Dispatch map to replace if/elif chain
 neox_dispatch = {    
@@ -119,4 +144,5 @@ _3dm_dispatch = {
 
 no_folder_box = [
     'OPT_Export_Neox_Mesh',
+    'OPT_Socket_Operations'
 ]
