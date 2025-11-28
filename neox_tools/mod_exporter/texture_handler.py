@@ -48,6 +48,7 @@ def texture_handler(export_path, context, operator):
             shader_texes = {"TexMetal": shader_textures.default_metal, "TexNormal": shader_textures.default_normal}
             for shader_key in shader_texes:
                 tex_path = os.path.join(texture_root_path, child.name, f"{child.name}_{shader_key}.dds")
+                # if not os.path.exists(tex_path):
                 with open(tex_path, "wb") as tex_file:
                     tex_file.write(base64.b64decode(shader_texes[shader_key]))
 

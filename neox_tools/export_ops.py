@@ -6,6 +6,19 @@ from bpy.props import StringProperty
 from bpy_extras.io_utils import ExportHelper, axis_conversion
 from .export_utils import writeuint8, writeuint16, writeuint32, writefloat
 
+
+def _ensure_uint(value: int, bits: int, label: str) -> int:
+    """Validate that value fits into an unsigned integer of given size."""
+    if isinstance(value, bool):
+        value = int(value)
+    elif not isinstance(value, int):
+        raise ValueError(f"{label} must be an integer, got {type(value).__name__}")
+
+    max_value = (1 << bits) - 1
+    if value < 0 or value > max_value:
+        raise ValueError(f"{label} ({value}) must be between 0 and {max_value}")
+    return value
+
 class IDVMI_OT_Export_Neox_Mesh(bpy.types.Operator, ExportHelper):
     bl_idname = "idvmi_neox.neox_exporter"
     bl_label = "Export NeoX Mesh"
@@ -96,9 +109,6 @@ def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
             positions = [v.co.copy() @ M_vert for v in child.data.vertices]
             normals = [v.normal.copy() @ M_vert for v in child.data.vertices]
 
-            child.data.calc_loop_triangles()
-            faces = [tri.vertices for tri in child.data.loop_triangles]
-
             uv_layer = child.data.uv_layers.active.data
 
             uv_sum = [Vector((0.0, 0.0)) for _ in child.data.vertices]
@@ -129,6 +139,7 @@ def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
             bm.from_mesh(child.data)
 
             ngons = [f for f in bm.faces if len(f.verts) > 4]
+            triangulated_face_count = len(ngons)
             if ngons:
                 bmesh.ops.triangulate(
                     bm, faces=ngons,
@@ -141,8 +152,14 @@ def parse_blender_meshes(armature, flip_uv_y, operator) -> dict:
             bpy.ops.object.mode_set(mode='EDIT')
 
             child.data.update()
+            if triangulated_face_count:
+                operator.report({'INFO'}, f"{child.name}: triangulated {triangulated_face_count} n-gons")
+            else:
+                operator.report({'INFO'}, str(child.name))
 
-            child.data.calc_tangents()  # aktif UV üzerinden
+            child.data.calc_loop_triangles()
+            child.data.calc_tangents()  # aktif UV ?zerinde
+            faces = [tri.vertices for tri in child.data.loop_triangles]
 
             acc = [Vector((0,0,0)) for _ in child.data.vertices]
             cnt = [0]*len(child.data.vertices)
@@ -220,30 +237,31 @@ def export_neox_mesh(export_path:os.PathLike, mesh_data:dict, arm_obj, operator)
 
     try:   
         with open(export_path, "wb") as file:
-            file_data = bytearray()
+            file_data = bytearray()                
 
-            file_data += b"\x34\x80\xC8\xBB" # Magic Number
+            file_data += b"\x34\x80\xC8\xBB" # Magic Number            
             file_data += b"\x04\x00\x05\x00" # File Version
-            file_data += writeuint32(1) # Bone Exist [file_version_mask + patch_version + mesh_type(skeletal)]
+            file_data += writeuint32(_ensure_uint(1, 32, "Bone metadata flags")) # Bone Exist [file_version_mask + patch_version + mesh_type(skeletal)]
 
             bone_count = len(mesh_data['bone_name'])
-            file_data += writeuint16(bone_count)
+            file_data += writeuint16(_ensure_uint(bone_count, 16, "Bone count"))
 
-            for parent_idx in mesh_data['bone_parent']:
-                file_data += writeuint16(parent_idx)
+            for idx, parent_idx in enumerate(mesh_data['bone_parent']):
+                label = f"Bone parent index {idx}"
+                file_data += writeuint16(_ensure_uint(parent_idx, 16, label))
             # for parent in arm_obj['NeoX:BoneParent']:
             #     parent = 65535 if parent == -1 else parent
             #     file_data += writeuint16(parent)
-
+            
             for n in range(bone_count):
                 file_data += mesh_data['bone_name'][n].encode('utf-8').ljust(32, b"\x00")
             # for n in range(bone_count):
-            #     file_data += arm_obj['NeoX:BoneOrder'][n].encode('utf-8').ljust(32, b"\x00")
+            #     file_data += arm_obj['NeoX:BoneOrder'][n].encode('utf-8').ljust(32, b"\x00")                
 
             if "NeoX:BoundingInfo" not in arm_obj or not arm_obj["NeoX:BoundingInfo"]:
-                file_data += writeuint8(0)
+                file_data += writeuint8(_ensure_uint(0, 8, "Bounding info flag"))
             else:
-                file_data += writeuint8(1)
+                file_data += writeuint8(_ensure_uint(1, 8, "Bounding info flag"))
                 bpy.context.view_layer.objects.active = arm_obj
                 arm_obj.select_set(True)
                 bpy.ops.object.mode_set(mode='POSE')
@@ -260,28 +278,28 @@ def export_neox_mesh(export_path:os.PathLike, mesh_data:dict, arm_obj, operator)
                 for matrix in matrixes:
                     file_data += writefloat(matrix)
 
-            file_data += writeuint8(0) # has_binding_info
+            file_data += writeuint8(_ensure_uint(0, 8, "Binding info flag")) # has_binding_info
             table_offset = len(file_data)
-            file_data += writeuint32(0) # table_offset // will be updated
+            file_data += writeuint32(_ensure_uint(0, 32, "LOD table offset placeholder")) # table_offset // will be updated
 
             vertex_count = 0
             face_count = 0
 
-            for mesh_info in mesh_data['mesh']:
+            for mesh_index, mesh_info in enumerate(mesh_data['mesh']):
                 vtx_count = len(mesh_info['position'])
-                file_data += writeuint32(vtx_count)
+                file_data += writeuint32(_ensure_uint(vtx_count, 32, f"Vertex count for mesh {mesh_index}"))
                 vertex_count += vtx_count
 
                 fce_count = len(mesh_info['face'])
-                file_data += writeuint32(fce_count)
+                file_data += writeuint32(_ensure_uint(fce_count, 32, f"Face count for mesh {mesh_index}"))
                 face_count += fce_count
 
-                file_data += writeuint8(1) # uv_channel_count
-                file_data += writeuint8(0) # has_color
+                file_data += writeuint8(_ensure_uint(1, 8, f"UV channel count for mesh {mesh_index}")) # uv_channel_count
+                file_data += writeuint8(_ensure_uint(0, 8, f"Color flag for mesh {mesh_index}")) # has_color
 
-            file_data += writeuint16(1) # lod_new_v
-            file_data += writeuint32(vertex_count)
-            file_data += writeuint32(face_count)
+            file_data += writeuint16(_ensure_uint(1, 16, "LOD section flag")) # lod_new_v
+            file_data += writeuint32(_ensure_uint(vertex_count, 32, "Total vertex count"))
+            file_data += writeuint32(_ensure_uint(face_count, 32, "Total face count"))
 
             for mesh_info in mesh_data['mesh']:
                 for position in mesh_info['position']:
@@ -299,8 +317,8 @@ def export_neox_mesh(export_path:os.PathLike, mesh_data:dict, arm_obj, operator)
                     # file_data += writefloat(y)
                     # file_data += writefloat(z)
 
-            file_data += writeuint16(1) # has tangent
-            for mesh_info in mesh_data['mesh']:
+            file_data += writeuint16(_ensure_uint(1, 16, "Tangent section flag")) # has tangent
+            for mesh_index, mesh_info in enumerate(mesh_data['mesh']):
                 for tangent in mesh_info['tangent']:
                     for point in tangent:
                         file_data += writefloat(point)
@@ -309,10 +327,11 @@ def export_neox_mesh(export_path:os.PathLike, mesh_data:dict, arm_obj, operator)
                     # file_data += writefloat(z)
 
             first_index = 0
-            for mesh_info in mesh_data['mesh']:
+            for mesh_index, mesh_info in enumerate(mesh_data['mesh']):
                 for face in mesh_info['face']:                
                     for point in face:                
-                        file_data += writeuint16(point + first_index)
+                        final_index = point + first_index
+                        file_data += writeuint16(_ensure_uint(final_index, 16, f"Face index for mesh {mesh_index}"))
                 first_index += len(mesh_info['position'])
 
             for mesh_info in mesh_data['mesh']:
@@ -323,30 +342,26 @@ def export_neox_mesh(export_path:os.PathLike, mesh_data:dict, arm_obj, operator)
                     # file_data += writefloat(v)
 
             # vertex color skipped
-            for mesh_info in mesh_data['mesh']:
-                for vertex_joint in mesh_info['vertex_joint']:
+            for mesh_index, mesh_info in enumerate(mesh_data['mesh']):
+                for vertex_idx, vertex_joint in enumerate(mesh_info['vertex_joint']):
                     for joint in vertex_joint:
-                        file_data += writeuint16(joint)
+                        label = f"Joint index for mesh {mesh_index}, vertex {vertex_idx}"
+                        file_data += writeuint16(_ensure_uint(joint, 16, label))
 
             for mesh_info in mesh_data['mesh']:
                 for vertex_joint_weight in mesh_info['vertex_joint_weight']:
                     for weight in vertex_joint_weight:
                         file_data += writefloat(weight)
 
-                    # vg1, vg2, vg3, vg4 = vertex_joint_weight                                    
-                    # file_data += writefloat(vg1)
-                    # file_data += writefloat(vg2)
-                    # file_data += writefloat(vg3)
-                    # file_data += writefloat(vg4)
-
             file_data += arm_obj['NeoX:BoneTail']
 
-            file_data[table_offset:table_offset+4] = writeuint32(len(file_data))
+            current_offset = _ensure_uint(len(file_data), 32, "Data table offset")
+            file_data[table_offset:table_offset+4] = writeuint32(current_offset)
             file_data += arm_obj['NeoX:LODTable']
 
             file.write(file_data)
     except Exception as e:
-            operator.report({'ERROR'}, f"[export_neox_mesh] {str(e)}")
-            return False
+        operator.report({'ERROR'}, f"[export_neox_mesh] {str(e)}")
+        return False
 
     return True
