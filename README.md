@@ -5,13 +5,15 @@ Blender plugin for 3D Migoto mods and proprietary engine level mods for the cert
 3.6
 
 # Features
-## Migoto
+## 3D Migoto
 - Auto find 3D Models and ignore 2D Models
 - Auto texture option
 - Auto ini writer
 ## Proprietary Engine
 - Mesh importer
 - Mesh exporter (I won't tell the tea - lol. Just use migoto tactic to export :P)
+- Mod Exporter (Custom mesh-data, skeleton and animation kit selector upon exporting)
+- Socket Operations
 
 # 3D Migoto Importing
 Use [XXMI-Tools](https://github.com/leotorrez/XXMITools) to importing 3D Migoto frame dumps
