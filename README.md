@@ -12,7 +12,7 @@ Blender plugin for 3D Migoto mods and proprietary engine level mods for the cert
 
 ## Proprietary Engine
 - Mesh Importer: Parses proprietary binary formats into Blender.
-- Mesh Exporter: Exports the model as priprietary binary format.
+- Mesh Exporter: Exports the model as proprietary binary format.
 - Mod Exporter: Supports custom mesh-data, skeleton, and animation kit selection.
 - Socket Operations: Tools for manipulating bone attachment points.
 
