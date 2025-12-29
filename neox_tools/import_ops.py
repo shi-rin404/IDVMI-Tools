@@ -23,6 +23,7 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
 
             for parser in is_parser_tried:
                 try:
+                    self.report({'INFO'}, f"Trying {parser.__name__}...")
                     model = {}
                     mesh_file.seek(0)
                     is_parser_tried[parser] = True
@@ -30,7 +31,7 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
                     check_weights(model['vertex_weight'], self)
                     break
                 except Exception as e:
-                    self.report({'ERROR'}, f"{e}")                    
+                    self.report({'ERROR'}, f"[{type(e).__name__}] {e}")                    
                     model = {}
                     continue
 
@@ -41,10 +42,11 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
             
 
         obj_name = os.path.basename(mesh_path).rsplit(".", 1)[0]
-        import_per_material(model, obj_name, self)
-        
-        self.report({'INFO'}, f"Import OK → {mesh_path}")
-        return {'FINISHED'}
+        if import_per_material(model, obj_name, self):        
+            self.report({'INFO'}, f"Import OK → {mesh_path}")
+            return {'FINISHED'}
+        else:
+            return {'CANCELLED'}
     
 def check_weights(weight_data, operator):
     for weights in weight_data:
@@ -60,6 +62,46 @@ def import_per_material(model, obj_name: str, operator):
 
     with open(log_file, "a") as log:
         log.write(f"--- Starting import for {obj_name} ---\n"); log.flush()
+
+        # --- Dummy root fix ---
+        if 'dummy_root' in model['bone_name']:
+            log.write("Found 'dummy_root', cleaning up model data...\n"); log.flush()
+
+            dummy_root_index = model['bone_name'].index('dummy_root')
+
+            # Remove dummy root from core lists
+            model['bone_name'].pop(dummy_root_index)
+            model['bone_matrix'].pop(dummy_root_index)
+            
+            old_bone_parents = model['bone_parent']
+            new_bone_parents = []
+            
+            # Repath parent indices, excluding the dummy root's own parent entry
+            for i, parent_idx in enumerate(old_bone_parents):
+                if i == dummy_root_index:
+                    continue # Skip the dummy root itself
+
+                new_parent_idx = parent_idx
+                if parent_idx == dummy_root_index or parent_idx == 65535:
+                    new_parent_idx = -1 # Was parented to dummy_root, now a 
+                elif parent_idx > dummy_root_index:
+                    new_parent_idx -= 1 # Parent index shifted down
+                
+                new_bone_parents.append(new_parent_idx)
+            
+            model['bone_parent'] = new_bone_parents
+
+            # Update vertex bone indices (joints) since bone indices have shifted
+            if 'vertex_bone' in model:
+                for joints in model['vertex_bone']:
+                    for i in range(len(joints)):
+                        joint_idx = joints[i]
+                        if joint_idx == dummy_root_index or joint_idx == 65535:
+                            joints[i] = 65535 # Set to invalid index, as it should not be weighted
+                        elif joint_idx > dummy_root_index:
+                            joints[i] -= 1
+
+            log.write("...cleanup complete.\n"); log.flush()
 
         # --- Axis conversation ---
         log.write("Performing axis conversion...\n"); log.flush()
@@ -112,23 +154,59 @@ def import_per_material(model, obj_name: str, operator):
         # Create all bones first (heads only)
         log.write("Setting bone heads...\n"); log.flush()
         for idx, bone_name in enumerate(model['bone_name']):
-            matrix_4 = model['bone_matrix'][idx]
-            bone = armature_obj.data.edit_bones.new(bone_name)
-            bone.head = matrix_to_blender(matrix_4)
-            # Set temporary tail (will be corrected later)
-            bone.tail = bone.head + Vector((0, 0, 0.1))
-        log.write("Bone heads set.\n"); log.flush()
+            log.write(f"  Processing bone {idx}: '{bone_name}'\n"); log.flush()
 
+            if not bone_name or not isinstance(bone_name, str):
+                log.write(f"  !! SKIPPING bone {idx}: Invalid name ('{bone_name}'). Not a string or empty.\n"); log.flush()
+                operator.report({'ERROR'}, f"Invalid bone name: {bone_name} | Not a string or empty.")
+                return False
+
+            try:
+                # Create the bone
+                bone = armature_obj.data.edit_bones.new(bone_name)
+                
+                # VERIFY: Check if Blender renamed the bone, which indicates a duplicate.
+                # This is the most reliable way to detect duplicates.
+                if bone.name != bone_name:
+                    log.write(f"  !! ABORTING: Bone '{bone_name}' was renamed to '{bone.name}' by Blender.\n"); log.flush()
+                    log.write(f"  This is likely caused by a duplicate bone name in the source file.\n"); log.flush()
+                    # Clean up the wrongly named bone before aborting
+                    armature_obj.data.edit_bones.remove(bone)
+                    operator.report({'ERROR'}, f"Duplicate bone name found: '{bone_name}'")
+                    return False
+
+                # Set bone position
+                matrix_4 = model['bone_matrix'][idx]
+                bone.head = matrix_to_blender(matrix_4)
+                # Set temporary tail (will be corrected later)
+                bone.tail = bone.head + Vector((0, 0, 0.1))
+            except Exception as e:
+                log.write(f"  !! FAILED to create bone '{bone_name}': {e}\n"); log.flush()
+                operator.report({'ERROR'}, f"[{type(e).__name__}] {e}")
+                import traceback
+                traceback.print_exc(file=log)
+                return False               
+
+        log.write("Bone heads set.\n"); log.flush()
 
         # Set bone hierarchy and tails
         log.write("Setting bone hierarchy and tails...\n"); log.flush()
-        for bone_name in model['bone_name']:                  
+        for bone_name in model['bone_name']:
+            if bone_name not in armature_obj.data.edit_bones:
+                log.write(f"  Skipping hierarchy for '{bone_name}' as it was not created.\n"); log.flush()
+                continue
+
             edit_bone = armature_obj.data.edit_bones[bone_name]        
 
             # Set parent (be explicit so index 0 isn't treated as falsy)
             parent_name = find_parent(bone_name)
             if parent_name is not None:
-                edit_bone.parent = armature_obj.data.edit_bones[parent_name]
+                if parent_name in armature_obj.data.edit_bones:
+                    edit_bone.parent = armature_obj.data.edit_bones[parent_name]
+                else:
+                    log.write(f"  !! Parent bone '{parent_name}' for bone '{bone_name}' not found in armature. Skipping parenting.\n"); log.flush()
+                    operator.report({'ERROR'}, f"Parent bone '{parent_name}' not found in armature.")
+                    return False
             else:            
                 bpy.ops.object.mode_set(mode='OBJECT')
                 bpy.context.view_layer.update()
@@ -143,57 +221,65 @@ def import_per_material(model, obj_name: str, operator):
             else:
                 # No child found, set tail to offset from head
                 edit_bone.tail = edit_bone.head + Vector((0, 0, 0.1))
+
+            # Blender silently deletes zero-length bones when leaving edit mode.
+            # Guard against that by enforcing a minimum length.
+            if (edit_bone.tail - edit_bone.head).length < 1e-5:
+                fallback_offset = Vector((0.0, 0.05, 0.0))
+                edit_bone.tail = edit_bone.head + fallback_offset
+                log.write(f"  Adjusted tail for '{bone_name}' to avoid zero-length (added {fallback_offset}).\n"); log.flush()
+
         log.write("Bone hierarchy and tails set.\n"); log.flush()
+
+        # --- Finalize Armature and Switch to Object Mode ---
+        log.write("Switching to OBJECT mode and updating depsgraph...\n"); log.flush()
+        try:
+            bpy.ops.object.mode_set(mode='OBJECT')
+            bpy.context.view_layer.update() # Force update after hierarchy changes
+            log.write("...done.\n"); log.flush()
+        except Exception:
+            operator.report({'ERROR'}, f"Error while switching to OBJECT mode: {e}")
+            return False
 
         # Custom Properties - CRASH ANALYZER BLOCK
         log.write("Setting custom properties on pose bones...\n"); log.flush()
+
         try:
             log.write("Switching to POSE mode...\n"); log.flush()
             bpy.ops.object.mode_set(mode='POSE')
             log.write("...switched to POSE mode successfully.\n"); log.flush()
 
             bounding_info = model.get('bounding_info')
+
             if bounding_info is None:
                 log.write("WARNING: 'bounding_info' not found in model data. Skipping pose bone properties.\n"); log.flush()
             else:
                 log.write(f"Found 'bounding_info' with {len(bounding_info)} entries. Armature has {len(armature_obj.pose.bones)} pose bones.\n"); log.flush()
-                
+        
                 for n, pbone in enumerate(armature_obj.pose.bones):
-                    # log.write(f"  Processing pose bone {n} ('{pbone.name}')...\n"); log.flush()
-                    
                     if n < len(bounding_info):
                         info_to_assign = bounding_info[n]
-                        # log.write(f"    Assigning bounding info (type: {type(info_to_assign)}): {info_to_assign}\n"); log.flush()
-                        
-                        # It's safer to assign custom properties in OBJECT mode.
-                        # While it often works in POSE mode, it can be a source of instability.
-                        bpy.ops.object.mode_set(mode='OBJECT')
-                        pbone.id_data["NeoX:BoundingInfo"] = str(info_to_assign) # Assign as string for max safety
-                        bpy.ops.object.mode_set(mode='POSE')
-
-                        # log.write(f"    ...assignment successful for bone {n}.\n"); log.flush()
+                        # log.write(f"  Processing pose bone {n} ('{pbone.name}'): Assigning {str(info_to_assign)}\n"); log.flush()
+                        pbone["NeoX:BoundingInfo"] = info_to_assign
                     else:
-                        operator.report({'WARNING'}, f"Not enough bounding_info entries for bone {n}. Stopping property assignment.")
-                        log.write(f"    WARNING: Not enough bounding_info entries for bone {n}. Stopping property assignment.\n"); log.flush()
-                        break 
-            
-            log.write("Switching back to OBJECT mode...\n"); log.flush()
+                        log.write(f"  WARNING: Not enough bounding_info entries for bone {n}.\n"); log.flush()
+                        break
+
+            log.write("Final switch back to OBJECT mode...\n"); log.flush()
             bpy.ops.object.mode_set(mode='OBJECT')
             log.write("...switched to OBJECT mode successfully.\n"); log.flush()
 
+
         except Exception as e:
-            log.write(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"); log.flush()
             log.write(f"CRITICAL PYTHON ERROR while setting pose bone properties:\n"); log.flush()
             log.write(f"ERROR: {e}\n"); log.flush()
             import traceback
             traceback.print_exc(file=log)
-            log.flush()
-            log.write(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"); log.flush()
             # Switch back to object mode to prevent leaving Blender in a weird state
-            bpy.ops.object.mode_set(mode='OBJECT')   
 
-            operator.report({'ERROR'}, f"Critical error while setting pose bone properties, error: {e}")
-            return {'CANCELLED'}
+            bpy.ops.object.mode_set(mode='OBJECT')
+            operator.report({'ERROR'}, f"Error while setting pose bone properties: {e}")
+            return False
        
         # Set armature custom properties
         log.write("Setting custom properties on armature...\n"); log.flush()
@@ -208,6 +294,38 @@ def import_per_material(model, obj_name: str, operator):
         # Convert matrix for 3D operations
         _3D_Matrix = M_game_to_blender.to_3x3()
         
+        # Validate armature
+        if len(model['bone_name']) != len(armature_data.bones):
+            log.write("!!! Bone count mismatch after creation. Aborting. !!!\n"); log.flush()
+            log.write(f"Expected {len(model['bone_name'])} bones based on source file, but Blender created {len(armature_data.bones)} bones.\n"); log.flush()
+            operator.report({'ERROR'}, f"Expected {len(model['bone_name'])} bones based on source file, but Blender created {len(armature_data.bones)} bones."); log.flush()
+            
+            model_bones = set(model['bone_name'])
+            armature_bones = {bone.name for bone in armature_data.bones}
+
+            missing_bones = model_bones - armature_bones
+            if missing_bones:
+                sorted_missing = sorted(list(missing_bones))
+                log.write(f"Bones in source file but NOT in Blender armature: {sorted_missing}\n"); log.flush()
+                for bone_name in sorted_missing:
+                    operator.report({'ERROR'}, f"Validation failed: Bone '{bone_name}' was not created in armature.")
+
+            extra_bones = armature_bones - model_bones
+            if extra_bones:
+                sorted_extra = sorted(list(extra_bones))
+                log.write(f"Bones in Blender armature but NOT in source file: {sorted_extra}\n"); log.flush()
+                operator.report({'WARNING'}, f"Extra bones found in armature: {sorted_extra}")
+
+            # Also check for duplicates in the original model data, which is a likely cause
+            from collections import Counter
+            dupes = [name for name, count in Counter(model['bone_name']).items() if count > 1]
+            if dupes:
+                log.write(f"!!! Found duplicate bone names in the source file data: {dupes} !!!\n"); log.flush()
+                operator.report({'ERROR'}, f"Duplicate bone names in source file: {dupes}. This is a likely cause of the error.")
+
+            operator.report({'ERROR'}, "Armature validation failed. Check log for details.")
+            return False
+
         # Meshes
         log.write("Processing meshes...\n"); log.flush()
         current_vertex_index = 0
@@ -374,5 +492,5 @@ def import_per_material(model, obj_name: str, operator):
 
         log.write(f"--- Successfully imported model: {obj_name} ---\n\n"); log.flush()
         print(f"Successfully imported model: {obj_name}")
-        return armature_obj
-
+        # return armature_obj
+        return True

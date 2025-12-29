@@ -57,7 +57,7 @@ def parse_mesh_1(model: dict[str, Any], f: BinaryIO , operator) -> dict[str, Any
         bone_binding_info = readuint8(f)        
         if bone_binding_info:
             model['bounding_info'] = []
-            for _ in range(bone_count):                
+            for _ in range(bone_count):
                 model['bounding_info'].append(tuple(readfloat(f) for _ in range(7)))
 
         model['bone_matrix'] = []
