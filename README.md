@@ -20,4 +20,4 @@ Blender plugin for 3D Migoto mods and proprietary engine level mods for the cert
 Use [XXMI-Tools](https://github.com/leotorrez/XXMITools) to importing 3D Migoto frame dumps
 
 # Preview
-<img width="1509" height="810" alt="image" src="https://github.com/user-attachments/assets/1765e11f-10dd-49cb-a349-da3ae8b7cbde" />
+<img width="1509" height="810" alt="496562350-1765e11f-10dd-49cb-a349-da3ae8b7cbde" src="https://github.com/user-attachments/assets/7677736c-3c73-4065-98b6-519d28a3be1a" />
