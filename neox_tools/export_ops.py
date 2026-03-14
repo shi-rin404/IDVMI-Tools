@@ -268,7 +268,7 @@ def parse_blender_meshes(armature, flip_uv_y, operator, log) -> dict:
                             vertex_joints.append(bone_index[vertex_group_names[group.group]])
                         except KeyError:
                             log.write(f"    ERROR: Mesh bone name '{vertex_group_names[group.group]}' not found in armature. Aborting.\n"); log.flush()
-                            operator.report({'ERROR'}, "Mesh bone names are not equal with the armature.")
+                            operator.report({'ERROR'}, f"Mesh bone names are not equal with the armature: {vertex_group_names[group.group]}")
                             return False
                 joints.append(vertex_joints)
                 weights.append(vertex_weights)

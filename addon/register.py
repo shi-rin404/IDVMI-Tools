@@ -126,12 +126,19 @@ def register_props():
     bpy.types.Scene.migoto_action_selector = bpy.props.EnumProperty(
         name="Action Selector",
         description="Select the action you want to do",
-        items=[            
+        items=[
+            ('OPT_Import_3DM', "Import 3DM Mesh", "Import a mesh from VB/IB buffer files"),
             ('OPT_Extract_Frame', "Extract Frame Dump (3DM)", "Auto selects the character materials. Selected materials will be copied into \"YourDumpFolder\\Character\" "),
             ('OPT_Set_Textures', "Set Textures (3DM)", "Auto sets t0 textures to your dumped mesh objects. Skips unvisible ones."),
-            ('OPT_Export_Mod', "Export 3DM Mod", "Select a folder to extract your mod"),                        
+            ('OPT_Export_Mod', "Export 3DM Mod", "Select a folder to extract your mod"),
         ],
-        default='OPT_Extract_Frame'
+        default='OPT_Import_3DM'
+    )
+
+    bpy.types.Scene.migoto_import_all_related = bpy.props.BoolProperty(
+        name="Import All Relative Files",
+        description="Import every draw call that shares the same IB and vb0 as the selected file",
+        default=True,
     )
 
     # Tek ortak klasör seçici: N-Panel'de çizilecek

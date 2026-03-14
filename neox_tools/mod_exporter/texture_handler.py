@@ -1,3 +1,10 @@
+#####################################
+# GIM ENCODE TOGGLE
+#====================================
+ENCODE_GIM_FILE = False
+#
+#####################################
+
 from copy import deepcopy
 import shutil, os, base64
 import xml.etree.ElementTree as ET
@@ -77,14 +84,22 @@ def texture_handler(export_path, context, operator):
     try:
         for n, file in enumerate(mtl_files):
             rel_path = os.path.join(materials_root_path, file).split("res\\", 1)[1].replace("\\", "/")
-            ET.SubElement(material_group.find("MaterialGroup"), f"Material_{n}", attrib={"Path": rel_path})
+            ET.SubElement(material_group.find("MaterialGroup"), f"Material_{n}", attrib={"Path": rel_path}) # The offset is 50 for NeoX3 Fix
     except IndexError:
         operator.report({'ERROR'}, "Your mod folder should be inside of 'res' folder!")
         return False
 
-    io_handler.ExportGim(
+    
+    
+    if ENCODE_GIM_FILE:
+        io_handler.ExportGim(
         material_group_path,
         convert_handler.xml_to_custom_bin(convert_handler.xml_to_bfs_list(material_group))
+        )
+    else: 
+        io_handler.ExportUndecodedGim(
+            file_path=material_group_path,
+            gim_data=material_group
         )
     
     return True

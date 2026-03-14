@@ -1,5 +1,10 @@
 import bpy
 
+def _draw_import_3dm(layout, scene, context, folder_box):
+    layout.prop(scene, "migoto_import_all_related", text="Import All Relative Files")
+    layout.operator("idvmi_migoto.import_3dm", icon="IMPORT")
+
+
 def _draw_extract_frame(layout, scene, context, folder_box):
     folder_box.label(text="Frame Dump Folder")
     folder_box.prop(scene, "frame_dump_selector", text="")
@@ -137,12 +142,14 @@ neox_dispatch = {
 }
 
 _3dm_dispatch = {
+    'OPT_Import_3DM': _draw_import_3dm,
     'OPT_Extract_Frame': _draw_extract_frame,
     'OPT_Set_Textures': _draw_set_textures,
     'OPT_Export_Mod': _draw_export_mod,
 }
 
 no_folder_box = [
+    'OPT_Import_3DM',
     'OPT_Export_Neox_Mesh',
     'OPT_Socket_Operations'
 ]

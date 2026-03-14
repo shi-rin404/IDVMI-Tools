@@ -25,3 +25,10 @@ def ExportGim(file_path:os.PathLike, gim_data:bytearray) -> None:
 
     with open(file_path, "wb") as f:
         f.write(gim_data)
+
+def ExportUndecodedGim(file_path:os.PathLike, gim_data:ET.Element) -> None:
+    # tree = ET.ElementTree(gim_data)
+    # tree.write(file_path, encoding="utf-8", xml_declaration=True)
+    with open(file_path, "w") as file:
+        ET.indent(gim_data, space="    ")
+        file.write(f"{ET.tostring(gim_data, encoding='unicode')}\n")

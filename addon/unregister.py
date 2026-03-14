@@ -27,8 +27,9 @@ def unregister_props():
         lambda: delattr(bpy.types.Scene, "metal_slot_selector"),
         lambda: delattr(bpy.types.Scene, "normal_slot_selector"),
         lambda: delattr(bpy.types.Scene, "namespace_textbox"),
-        lambda: delattr(bpy.types.Scene, "neox_action_selector"),        
-        lambda: delattr(bpy.types.Scene, "migoto_action_selector"),          
+        lambda: delattr(bpy.types.Scene, "neox_action_selector"),
+        lambda: delattr(bpy.types.Scene, "migoto_action_selector"),
+        lambda: delattr(bpy.types.Scene, "migoto_import_all_related"),
     ]
 
     for function in unregister:

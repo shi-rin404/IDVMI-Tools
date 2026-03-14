@@ -207,10 +207,10 @@ def import_per_material(model, obj_name: str, operator):
                     log.write(f"  !! Parent bone '{parent_name}' for bone '{bone_name}' not found in armature. Skipping parenting.\n"); log.flush()
                     operator.report({'ERROR'}, f"Parent bone '{parent_name}' not found in armature.")
                     return False
-            else:            
-                bpy.ops.object.mode_set(mode='OBJECT')
-                bpy.context.view_layer.update()
-                bpy.ops.object.mode_set(mode='EDIT')
+            # else:            // Commented out because of weird C-level crashes
+            #     bpy.ops.object.mode_set(mode='OBJECT')
+            #     bpy.context.view_layer.update()
+            #     bpy.ops.object.mode_set(mode='EDIT')
 
             # Set tail to first child's head, or offset from head if no child
             child_index = find_child(bone_name)
