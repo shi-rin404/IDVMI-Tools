@@ -9,8 +9,12 @@ import xml.etree.ElementTree as ET
 from .xml_converter import parse_handler, convert_handler, io_handler
 
 def gim_handler(export_path:str, rig_info:dict, armature):
-    element_tags, attribute_map = parse_handler.parseCustomBinFormat(rig_info["gim"])
-    decoded_gim_data:ET.Element = convert_handler.tagWrapper(element_tags, attribute_map)[0]
+    # element_tags, attribute_map = parse_handler.parseCustomBinFormat(rig_info["gim"])
+    if parse_handler.typeFile(rig_info["gim"]) == "Binary":
+        element_tags, attribute_map = parse_handler.parseCustomBinFormat(rig_info["gim"])
+        decoded_gim_data:list[ET.Element] = convert_handler.tagWrapper(element_tags, attribute_map)[0]
+    else:
+        decoded_gim_data:list[ET.Element] = ET.parse(rig_info["gim"])    
 
     # Mesh
     n = 0

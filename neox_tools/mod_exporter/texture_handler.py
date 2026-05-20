@@ -6,12 +6,14 @@ ENCODE_GIM_FILE = False
 #####################################
 
 from copy import deepcopy
-import shutil, os, base64
+import re, shutil, os, base64
 import xml.etree.ElementTree as ET
 from ...export_mod import shader_textures
 from ...export_mod import ini_maker
 from ..export_ops import get_armature
 from .xml_converter import io_handler, convert_handler
+
+_MULTI_MATCH_RE = re.compile(r"(?:[a-z]*?_[cde]_[a-z]*?)_(?:[a-z0-9]+_(mask|nor))", re.IGNORECASE)
 
 def texture_handler(export_path, context, operator):
     armature = get_armature(context, operator)
@@ -52,12 +54,34 @@ def texture_handler(export_path, context, operator):
             else:
                 material_data.find("Material").find("ParamTable").find("Tex0").attrib["Value"] = "please/add/texture.dds"
             
-            shader_texes = {"TexMetal": shader_textures.default_metal, "TexNormal": shader_textures.default_normal}
-            for shader_key in shader_texes:
-                tex_path = os.path.join(texture_root_path, child.name, f"{child.name}_{shader_key}.dds")
-                # if not os.path.exists(tex_path):
-                with open(tex_path, "wb") as tex_file:
-                    tex_file.write(base64.b64decode(shader_texes[shader_key]))
+            found_textures = {}
+            if base_diffuse_path:
+                source_dir = os.path.dirname(base_diffuse_path)
+                diffuse_stem = os.path.splitext(os.path.basename(base_diffuse_path))[0]
+                base_prefix = diffuse_stem.rsplit("_", 1)[0]  # e.g. "yiyaoshi_e_yuhuo_body01"
+
+                keywords = {"mask": "TexMetal", "nor": "TexNormal"}
+                for keyword, shader_key in keywords.items():
+                    candidates = [f for f in os.listdir(source_dir) if f.startswith(base_prefix) and keyword in f]
+                    if len(candidates) == 1:
+                        found_textures[shader_key] = os.path.join(source_dir, candidates[0])
+                    elif len(candidates) > 1:
+                        for fname in candidates:
+                            m = _MULTI_MATCH_RE.search(os.path.splitext(fname)[0])
+                            if m and m.group(1).lower() == keyword:
+                                found_textures[shader_key] = os.path.join(source_dir, fname)
+                                break
+
+            shader_defaults = {"TexMetal": shader_textures.default_metal, "TexNormal": shader_textures.default_normal}
+            for shader_key in shader_defaults:
+                if shader_key in found_textures:
+                    src = found_textures[shader_key]
+                    tex_path = os.path.join(texture_root_path, child.name, os.path.basename(src))
+                    shutil.copy(src, tex_path)
+                else:
+                    tex_path = os.path.join(texture_root_path, child.name, f"{child.name}_{shader_key}.dds")
+                    with open(tex_path, "wb") as tex_file:
+                        tex_file.write(base64.b64decode(shader_defaults[shader_key]))
 
                 material_data.find("Material").find("ParamTable").find(shader_key).attrib["Value"] = tex_path.split("res\\", 1)[1].replace("\\", "/")
 

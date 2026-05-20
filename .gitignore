@@ -1,2 +1,7 @@
 *.pyc
 neox_tools/import_per_material_log.txt
+.claude/settings.local.json
+neox_tools/export_per_material_log.txt
+neox_tools/export_per_material_log.txt
+neox_tools/export_per_material_log.txt
+neox_tools/mod_exporter/export_per_material_log.txt
