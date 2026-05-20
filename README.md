@@ -8,6 +8,7 @@ Blender plugin for 3D Migoto mods and proprietary engine level mods for the cert
 ## 3D Migoto
 - Automated Asset Detection: Filters 3D models and excludes 2D/UI elements.
 - Auto-Texture Assignment: Automatically maps textures to materials.
+- Mesh Importer: Imports ib/vb0*.txt files (.buf files excluded)
 - Mod Exporter: Automates .ini file creation for mod loaders.
 
 ## Proprietary Engine
