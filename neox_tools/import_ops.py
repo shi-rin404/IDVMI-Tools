@@ -91,17 +91,17 @@ def import_per_material(model, obj_name: str, operator):
                     
                     new_bone_parents.append(new_parent_idx)
             
-            model['bone_parent'] = new_bone_parents
+                model['bone_parent'] = new_bone_parents
 
-            # Update vertex bone indices (joints) since bone indices have shifted
-            if 'vertex_bone' in model:
-                for joints in model['vertex_bone']:
-                    for i in range(len(joints)):
-                        joint_idx = joints[i]
-                        if joint_idx == dummy_root_index or joint_idx == 65535:
-                            joints[i] = 65535 # Set to invalid index, as it should not be weighted
-                        elif joint_idx > dummy_root_index:
-                            joints[i] -= 1
+                # Update vertex bone indices (joints) since bone indices have shifted
+                if 'vertex_bone' in model:
+                    for joints in model['vertex_bone']:
+                        for i in range(len(joints)):
+                            joint_idx = joints[i]
+                            if joint_idx == dummy_root_index or joint_idx == 65535:
+                                joints[i] = 65535 # Set to invalid index, as it should not be weighted
+                            elif joint_idx > dummy_root_index:
+                                joints[i] -= 1
 
             log.write("...cleanup complete.\n"); log.flush()
 
