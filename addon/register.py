@@ -128,6 +128,7 @@ def register_props():
         description="Select the action you want to do",
         items=[
             ('OPT_Import_3DM', "Import 3DM Mesh", "Import a mesh from VB/IB buffer files"),
+            ('OPT_Import_CB_Pose', "Import CB Pose", "Import a constant-buffer pose armature from .txt or .buf files"),
             ('OPT_Extract_Frame', "Extract Frame Dump (3DM)", "Auto selects the character materials. Selected materials will be copied into \"YourDumpFolder\\Character\" "),
             ('OPT_Set_Textures', "Set Textures (3DM)", "Auto sets t0 textures to your dumped mesh objects. Skips unvisible ones."),
             ('OPT_Export_Mod', "Export 3DM Mod", "Select a folder to extract your mod"),
@@ -135,10 +136,52 @@ def register_props():
         default='OPT_Import_3DM'
     )
 
-    bpy.types.Scene.migoto_import_all_related = bpy.props.BoolProperty(
+    bpy.types.Scene.migoto_cb_pose_start_index = bpy.props.IntProperty(
+        name="Start Index",
+        description="First constant-buffer float4 row/register to import",
+        default=0,
+        min=0,
+    )
+
+    bpy.types.Scene.migoto_cb_pose_end_index = bpy.props.IntProperty(
+        name="End Index",
+        description="Last constant-buffer float4 row/register to import",
+        default=1019,
+        min=0,
+    )
+
+    bpy.types.Scene.migoto_cb_pose_batch_import_related_meshes = bpy.props.BoolProperty(
+        name="Batch Import Relates Meshes",
+        description="Also apply CB pose imports to scene meshes sharing a vbN hash with the selected mesh objects",
+        default=False,
+    )
+
+    bpy.types.Scene.migoto_mesh_import_mode = bpy.props.EnumProperty(
+        name="Import Type",
+        description="Select the 3DMigoto mesh buffer type",
+        items=[
+            ('TXT', "Import *.txt", "Import text frame-analysis buffers"),
+            ('BUF', "Import *.buf", "Import binary buffers using a .fmt layout"),
+        ],
+        default='TXT',
+    )
+
+    bpy.types.Scene.migoto_use_standard_model_format = bpy.props.BoolProperty(
+        name="Use standard model format",
+        description="Use the built-in default .fmt layout for .buf imports",
+        default=False,
+    )
+
+    bpy.types.Scene.migoto_import_all_related_txt = bpy.props.BoolProperty(
         name="Import All Relative Files",
-        description="Import every draw call that shares the same IB and vb0 as the selected file",
+        description="Import every text draw call that shares the same IB and vb0 as the selected file",
         default=True,
+    )
+
+    bpy.types.Scene.migoto_import_all_related_buf = bpy.props.BoolProperty(
+        name="Import All Relative Files",
+        description="Import every binary draw call that shares the same IB and vb0 as the selected file",
+        default=False,
     )
 
     # Tek ortak klasör seçici: N-Panel'de çizilecek

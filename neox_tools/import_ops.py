@@ -3,12 +3,34 @@ import bpy
 import os
 from mathutils import Matrix, Vector
 from math import isfinite
-from bpy_extras.io_utils import axis_conversion
+from bpy.props import BoolProperty, StringProperty
+from bpy_extras.io_utils import ImportHelper, axis_conversion
 from math import pi
 
-class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
+class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
     bl_idname = "idvmi_neox.neox_importer"
     bl_label = "Import NeoX Mesh"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    filename_ext = ".mesh"
+    filepath: StringProperty(subtype="FILE_PATH")
+    filter_glob: StringProperty(
+        default="*.mesh",
+        options={'HIDDEN'},
+        maxlen=255,
+    )
+
+    use_scene_selector: BoolProperty(
+        default=False,
+        options={'HIDDEN'},
+    )
+
+    def invoke(self, context, event):
+        if self.use_scene_selector:
+            return self.execute(context)
+
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
 
     def execute(self, context):
         root = os.path.dirname(__file__)
@@ -16,9 +38,24 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
         with open(log_file, "w") as log:
             log.write("--- New import session started ---\n")
 
-        mesh_path = bpy.path.abspath(context.scene.neox_mesh_selector)
+        mesh_path = self.filepath or context.scene.neox_mesh_selector
+        mesh_path = bpy.path.abspath(mesh_path)
 
-        with open(mesh_path, "rb") as mesh_file:           
+        if not mesh_path:
+            self.report({'ERROR'}, "Please select a .mesh file")
+            return {'CANCELLED'}
+
+        if os.path.splitext(mesh_path)[1].lower() != ".mesh":
+            self.report({'ERROR'}, f"Expected a .mesh file: {mesh_path}")
+            return {'CANCELLED'}
+
+        if not os.path.isfile(mesh_path):
+            self.report({'ERROR'}, f"File not found: {mesh_path}")
+            return {'CANCELLED'}
+
+        context.scene.neox_mesh_selector = mesh_path
+
+        with open(mesh_path, "rb") as mesh_file:
             is_parser_tried = {parse_mesh_1: False, parse_mesh_2: False, parse_mesh_3: False}
 
             for parser in is_parser_tried:
@@ -48,7 +85,32 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator):
             return {'FINISHED'}
         else:
             return {'CANCELLED'}
-    
+
+
+def menu_func_import(self, context):
+    op = self.layout.operator(
+        IDVMI_OT_Import_Neox_Mesh.bl_idname,
+        text="NeoX Mesh (.mesh)",
+    )
+    op.filepath = ""
+
+
+if hasattr(bpy.types, "FileHandler"):
+    class IDVMI_FH_Neox_Mesh(bpy.types.FileHandler):
+        bl_idname = "IDVMI_FH_neox_mesh"
+        bl_label = "NeoX Mesh"
+        bl_import_operator = IDVMI_OT_Import_Neox_Mesh.bl_idname
+        bl_file_extensions = ".mesh"
+
+        @classmethod
+        def poll_drop(cls, context):
+            return context.area and context.area.type == 'VIEW_3D'
+else:
+    # Blender 3.6 does not expose Python file drop handlers. In that version,
+    # .mesh files dropped into the viewport may be claimed by Blender's built-in
+    # image drop handler, so the supported path is File > Import > NeoX Mesh.
+    IDVMI_FH_Neox_Mesh = None
+
 def check_weights(weight_data, operator):
     for weights in weight_data:
         for weight in weights:
@@ -184,7 +246,6 @@ def import_per_material(model, obj_name: str, operator):
                     # Set bone position
                     matrix_4 = model['bone_matrix'][idx]
                     bone.head = matrix_to_blender(matrix_4)
-                    print(matrix_to_blender(matrix_4))
 
                     # Set temporary tail (will be corrected later)
                     bone.tail = bone.head + Vector((0, 0, 0.1))

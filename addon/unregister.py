@@ -29,6 +29,13 @@ def unregister_props():
         lambda: delattr(bpy.types.Scene, "namespace_textbox"),
         lambda: delattr(bpy.types.Scene, "neox_action_selector"),
         lambda: delattr(bpy.types.Scene, "migoto_action_selector"),
+        lambda: delattr(bpy.types.Scene, "migoto_cb_pose_start_index"),
+        lambda: delattr(bpy.types.Scene, "migoto_cb_pose_end_index"),
+        lambda: delattr(bpy.types.Scene, "migoto_cb_pose_batch_import_related_meshes"),
+        lambda: delattr(bpy.types.Scene, "migoto_mesh_import_mode"),
+        lambda: delattr(bpy.types.Scene, "migoto_use_standard_model_format"),
+        lambda: delattr(bpy.types.Scene, "migoto_import_all_related_txt"),
+        lambda: delattr(bpy.types.Scene, "migoto_import_all_related_buf"),
         lambda: delattr(bpy.types.Scene, "migoto_import_all_related"),
     ]
 

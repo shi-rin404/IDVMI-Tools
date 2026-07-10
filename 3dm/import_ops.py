@@ -1,11 +1,19 @@
+import io
+import json
 import os
 import re
 import math
 import numpy as np
 import bpy
 
+from .constant_buffer_armature import import_constant_buffer_pose_armature
 from .data_importer import BlenderDataImporter
-from ..export_mod.datastructures import VertexBufferGroup, IndexBuffer
+from ..export_mod.datastructures import (
+    IndividualVertexBuffer,
+    InputLayout,
+    VertexBufferGroup,
+    IndexBuffer,
+)
 from ..export_mod.data.byte_buffer import (
     AbstractSemantic, Semantic, BufferSemantic, BufferLayout, NumpyBuffer,
 )
@@ -17,9 +25,140 @@ from ..export_mod.data.dxgi_format import DXGIFormat, DXGIType
 # ---------------------------------------------------------------------------
 
 _RESOURCE_RE = re.compile(
-    r'^(\d{6})-(ib|vb\d+)=([0-9a-f]{8})-vs=([0-9a-f]{16})-ps=([0-9a-f]{16})\.txt$',
+    r'^(\d{6})-(ib|vb\d+)=([0-9a-f]{8})-vs=([0-9a-f]{16})-ps=([0-9a-f]{16})\.(txt|buf)$',
     re.IGNORECASE,
 )
+
+_STANDARD_MODEL_FMT = """stride: 80
+topology: trianglelist
+format: DXGI_FORMAT_R16_UINT
+element[0]:
+  SemanticName: POSITION
+  SemanticIndex: 0
+  Format: R32G32B32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 0
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[1]:
+  SemanticName: NORMAL
+  SemanticIndex: 0
+  Format: R32G32B32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 12
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[2]:
+  SemanticName: TEXCOORD
+  SemanticIndex: 0
+  Format: R32G32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 64
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[3]:
+  SemanticName: COLOR
+  SemanticIndex: 0
+  Format: R8G8B8A8_UNORM
+  InputSlot: 0
+  AlignedByteOffset: 60
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[4]:
+  SemanticName: TEXCOORD
+  SemanticIndex: 1
+  Format: R32G32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 72
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[5]:
+  SemanticName: TEXCOORD
+  SemanticIndex: 2
+  Format: R32G32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 72
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[6]:
+  SemanticName: TEXCOORD
+  SemanticIndex: 3
+  Format: R32G32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 72
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[7]:
+  SemanticName: TEXCOORD
+  SemanticIndex: 4
+  Format: R32G32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 72
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[8]:
+  SemanticName: TEXCOORD
+  SemanticIndex: 5
+  Format: R32G32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 72
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[9]:
+  SemanticName: TEXCOORD
+  SemanticIndex: 6
+  Format: R32G32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 72
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[10]:
+  SemanticName: TEXCOORD
+  SemanticIndex: 7
+  Format: R32G32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 72
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[11]:
+  SemanticName: TANGENT
+  SemanticIndex: 0
+  Format: R32G32B32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 24
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[12]:
+  SemanticName: BLENDINDICES
+  SemanticIndex: 0
+  Format: R16G16B16A16_UINT
+  InputSlot: 0
+  AlignedByteOffset: 52
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+element[13]:
+  SemanticName: BLENDWEIGHT
+  SemanticIndex: 0
+  Format: R32G32B32A32_FLOAT
+  InputSlot: 0
+  AlignedByteOffset: 36
+  InputSlotClass: per-vertex
+  InstanceDataStepRate: 0
+"""
+
+_CONSTANT_BUFFER_TXT_RES = (
+    re.compile(r'^[0-9a-f]{8}-stride=\d+\.txt$', re.IGNORECASE),
+    re.compile(
+        r'^\d{6}\.\d+-\[.+\]-vs-cb\d+=[0-9a-f]{8}\.txt$',
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r'^\d{6}-vs-cb\d+=[0-9a-f]{8}-vs=[0-9a-f]{16}-ps=[0-9a-f]{16}\.txt$',
+        re.IGNORECASE,
+    ),
+)
+
+_VB_HASH_RE = re.compile(r'vb\d=([0-9a-f]{8})', re.IGNORECASE)
 
 
 def _parse_resource(path):
@@ -29,21 +168,24 @@ def _parse_resource(path):
     if not m:
         raise ValueError(
             f"'{name}' does not match the 3DM resource format "
-            f"(<000000>-<ib|vbN>=<hash8>-vs=<hash16>-ps=<hash16>.txt)"
+            f"(<000000>-<ib|vbN>=<hash8>-vs=<hash16>-ps=<hash16>.<txt|buf>)"
         )
     return {
         'draw_call':     m.group(1),
         'resource_type': m.group(2).lower(),
         'resource_hash': m.group(3).lower(),
+        'extension':     m.group(6).lower(),
     }
 
 
-def _scan_directory(directory):
+def _scan_directory(directory, extension=None):
     """Return dict: draw_call -> {resource_type: (hash, abs_path)}."""
     grouped = {}
     for fname in os.listdir(directory):
         m = _RESOURCE_RE.match(fname)
         if not m:
+            continue
+        if extension is not None and m.group(6).lower() != extension:
             continue
         dc    = m.group(1)
         rtype = m.group(2).lower()
@@ -81,6 +223,25 @@ def _vb0_stem(vb_path):
     return os.path.splitext(os.path.basename(vb_path))[0]
 
 
+def _resource_extension(import_mode):
+    return "buf" if import_mode == 'BUF' else "txt"
+
+
+def _resource_filter(import_mode):
+    ext = _resource_extension(import_mode)
+    return f"*-ib=*.{ext};*-vb*.{ext}"
+
+
+def _resource_kind(import_mode):
+    return "*.buf" if import_mode == 'BUF' else "*.txt"
+
+
+def _import_all_related_enabled(context, import_mode):
+    if import_mode == 'BUF':
+        return context.scene.migoto_import_all_related_buf
+    return context.scene.migoto_import_all_related_txt
+
+
 # ---------------------------------------------------------------------------
 # Buffer parsing
 # ---------------------------------------------------------------------------
@@ -98,8 +259,7 @@ _SEMANTIC_MAP = {
 }
 
 
-def _parse_vertex_buffer(vb_path: str) -> NumpyBuffer:
-    vbg = VertexBufferGroup([vb_path])
+def _vertex_buffer_group_to_numpy(vbg: VertexBufferGroup) -> NumpyBuffer:
     valid_names = vbg.get_valid_semantics()
 
     buf_semantics = []
@@ -142,10 +302,47 @@ def _parse_vertex_buffer(vb_path: str) -> NumpyBuffer:
     return NumpyBuffer(vertex_layout, vertex_arr)
 
 
+def _parse_vertex_buffer(vb_path: str) -> NumpyBuffer:
+    return _vertex_buffer_group_to_numpy(VertexBufferGroup([vb_path]))
+
+
+def _parse_vertex_buffer_bin(vb_path: str, fmt_text: str) -> NumpyBuffer:
+    layout = InputLayout()
+    idx = _get_vb_index(vb_path)
+    vb = IndividualVertexBuffer(idx, io.StringIO(fmt_text), layout, False)
+    with open(vb_path, "rb") as f:
+        vb.parse_vb_bin(f)
+
+    if not vb.vertices:
+        raise ValueError("Vertex buffer contains no vertices")
+
+    vbg = VertexBufferGroup(layout=layout)
+    vbg.vbs.append(vb)
+    vbg.slots[idx] = vb
+    vbg.first = vb.first
+    vbg.vertex_count = vb.vertex_count
+    vbg.topology = vb.topology
+    vbg.flag_invalid_semantics()
+    vbg.merge_vbs(vbg.vbs)
+    return _vertex_buffer_group_to_numpy(vbg)
+
+
 def _parse_index_buffer(ib_path: str) -> NumpyBuffer:
     with open(ib_path, 'r') as f:
         ib = IndexBuffer(f)
 
+    return _index_buffer_to_numpy(ib)
+
+
+def _parse_index_buffer_bin(ib_path: str, fmt_text: str) -> NumpyBuffer:
+    ib = IndexBuffer(io.StringIO(fmt_text), load_indices=False)
+    with open(ib_path, "rb") as f:
+        ib.parse_ib_bin(f)
+
+    return _index_buffer_to_numpy(ib)
+
+
+def _index_buffer_to_numpy(ib: IndexBuffer) -> NumpyBuffer:
     if not ib.faces:
         raise ValueError("Index buffer contains no faces")
 
@@ -159,6 +356,13 @@ def _parse_index_buffer(ib_path: str) -> NumpyBuffer:
     return NumpyBuffer(index_layout, index_arr)
 
 
+def _get_vb_index(vb_path):
+    match = VertexBufferGroup.vb_idx_pattern.search(vb_path)
+    if match is None:
+        return 0
+    return int(match.group(1))
+
+
 # ---------------------------------------------------------------------------
 # Mesh building
 # ---------------------------------------------------------------------------
@@ -169,6 +373,17 @@ def _build_mesh(vb_path: str, ib_path: str, name: str):
     vertex_buffer = _parse_vertex_buffer(vb_path)
     index_buffer  = _parse_index_buffer(ib_path)
 
+    return _build_mesh_from_buffers(vertex_buffer, index_buffer, name)
+
+
+def _build_mesh_buf(vb_path: str, ib_path: str, fmt_text: str, name: str):
+    vertex_buffer = _parse_vertex_buffer_bin(vb_path, fmt_text)
+    index_buffer = _parse_index_buffer_bin(ib_path, fmt_text)
+
+    return _build_mesh_from_buffers(vertex_buffer, index_buffer, name)
+
+
+def _build_mesh_from_buffers(vertex_buffer, index_buffer, name: str):
     mesh_data = bpy.data.meshes.new(name)
     obj = bpy.data.objects.new(name, mesh_data)
     obj.rotation_euler[0] = math.radians(90)
@@ -203,6 +418,53 @@ def _run_import(operator, vb_path: str, ib_path: str):
     return {'FINISHED'}
 
 
+def _run_import_buf(operator, pairs, use_standard_model_format):
+    if not use_standard_model_format:
+        _ask_for_fmt_file(pairs)
+        return {'FINISHED'}
+
+    try:
+        return _run_import_buf_with_fmt(operator, pairs, _STANDARD_MODEL_FMT)
+    except Exception as e:
+        operator.report(
+            {'WARNING'},
+            f"Standard model format failed: {e}. Select a .fmt file.",
+        )
+        _ask_for_fmt_file(pairs)
+        return {'FINISHED'}
+
+
+def _run_import_buf_with_fmt(operator, pairs, fmt_text):
+    imported, failed = 0, []
+
+    for vb_path, ib_path in pairs:
+        name = _vb0_stem(vb_path)
+        try:
+            _build_mesh_buf(vb_path, ib_path, fmt_text, name)
+            imported += 1
+        except Exception as e:
+            failed.append(f"{os.path.basename(vb_path)}: {e}")
+
+    if failed and not imported:
+        raise RuntimeError("; ".join(failed))
+
+    for msg in failed:
+        operator.report({'WARNING'}, f"Failed - {msg}")
+    operator.report(
+        {'INFO'},
+        f"Imported {imported} binary mesh(es)"
+        + (f" ({len(failed)} failed)" if failed else ""),
+    )
+    return {'FINISHED'}
+
+
+def _ask_for_fmt_file(pairs):
+    bpy.ops.idvmi_migoto.select_fmt_manual(
+        'INVOKE_DEFAULT',
+        pairs_json=json.dumps(pairs),
+    )
+
+
 # ---------------------------------------------------------------------------
 # Operators
 # ---------------------------------------------------------------------------
@@ -217,17 +479,51 @@ class IDVMI_OT_Import_3DM(bpy.types.Operator):
         default="*-ib=*.txt;*-vb*.txt",
         options={'HIDDEN'},
     )
+    import_mode: bpy.props.EnumProperty(
+        name="Import Type",
+        items=[
+            ('TXT', "Import *.txt", "Import text frame-analysis buffers"),
+            ('BUF', "Import *.buf", "Import binary buffers using a .fmt layout"),
+        ],
+        default='TXT',
+    )
+    use_standard_model_format: bpy.props.BoolProperty(
+        name="Use standard model format",
+        description="Use the built-in default .fmt layout for .buf imports",
+        default=False,
+    )
 
     def invoke(self, context, event):
+        self.import_mode = context.scene.migoto_mesh_import_mode
+        self.use_standard_model_format = (
+            context.scene.migoto_use_standard_model_format
+        )
+        self.filter_glob = _resource_filter(self.import_mode)
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "import_mode")
+        if self.import_mode == 'BUF':
+            layout.prop(self, "use_standard_model_format")
 
     def execute(self, context):
         selected  = bpy.path.abspath(self.filepath)
         directory = os.path.dirname(selected)
-        scan      = _scan_directory(directory)
+        extension = _resource_extension(self.import_mode)
+        scan      = _scan_directory(directory, extension)
 
-        if context.scene.migoto_import_all_related:
+        context.scene.migoto_mesh_import_mode = self.import_mode
+        context.scene.migoto_use_standard_model_format = (
+            self.use_standard_model_format
+        )
+
+        if not selected.lower().endswith("." + extension):
+            self.report({'ERROR'}, f"Select a {_resource_kind(self.import_mode)} file")
+            return {'CANCELLED'}
+
+        if _import_all_related_enabled(context, self.import_mode):
             return self._execute_batch(selected, scan)
         return self._execute_single(selected, scan)
 
@@ -236,6 +532,12 @@ class IDVMI_OT_Import_3DM(bpy.types.Operator):
         vb_path, ib_path = self._resolve_pair(selected, scan)
         if vb_path is None:
             return {'FINISHED'}   # error reported or VB dialog opened
+        if self.import_mode == 'BUF':
+            return _run_import_buf(
+                self,
+                [[vb_path, ib_path]],
+                self.use_standard_model_format,
+            )
         return _run_import(self, vb_path, ib_path)
 
     def _execute_batch(self, selected, scan):
@@ -259,6 +561,14 @@ class IDVMI_OT_Import_3DM(bpy.types.Operator):
         if not related:
             self.report({'ERROR'}, "No related draw calls found")
             return {'CANCELLED'}
+
+        if self.import_mode == 'BUF':
+            pairs = [[vb_path, ib_path] for _, vb_path, ib_path in related]
+            return _run_import_buf(
+                self,
+                pairs,
+                self.use_standard_model_format,
+            )
 
         imported, failed = 0, []
         for dc, vb_path, ib_path in related:
@@ -317,6 +627,8 @@ class IDVMI_OT_Import_3DM(bpy.types.Operator):
             'INVOKE_DEFAULT',
             ib_path=ib_path,
             directory=directory,
+            import_mode=self.import_mode,
+            use_standard_model_format=self.use_standard_model_format,
         )
         return None, None
 
@@ -333,10 +645,29 @@ class IDVMI_OT_Select_VB_Manual(bpy.types.Operator):
     )
     directory: bpy.props.StringProperty(subtype="DIR_PATH")
     ib_path:   bpy.props.StringProperty(options={'HIDDEN'})
+    import_mode: bpy.props.EnumProperty(
+        name="Import Type",
+        items=[
+            ('TXT', "Import *.txt", "Import text frame-analysis buffers"),
+            ('BUF', "Import *.buf", "Import binary buffers using a .fmt layout"),
+        ],
+        default='TXT',
+    )
+    use_standard_model_format: bpy.props.BoolProperty(
+        name="Use standard model format",
+        default=False,
+    )
 
     def invoke(self, context, event):
+        self.filter_glob = f"*-vb*.{_resource_extension(self.import_mode)}"
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "import_mode")
+        if self.import_mode == 'BUF':
+            layout.prop(self, "use_standard_model_format")
 
     def execute(self, context):
         vb_path = bpy.path.abspath(self.filepath)
@@ -354,4 +685,172 @@ class IDVMI_OT_Select_VB_Manual(bpy.types.Operator):
             )
             return {'CANCELLED'}
 
+        if info['extension'] != _resource_extension(self.import_mode):
+            self.report({'ERROR'}, f"Expected a {_resource_kind(self.import_mode)} VB file")
+            return {'CANCELLED'}
+
+        if self.import_mode == 'BUF':
+            return _run_import_buf(
+                self,
+                [[vb_path, self.ib_path]],
+                self.use_standard_model_format,
+            )
+
         return _run_import(self, vb_path, self.ib_path)
+
+
+class IDVMI_OT_Select_FMT_Manual(bpy.types.Operator):
+    """Select the format file used to import binary 3DMigoto buffers"""
+    bl_idname = "idvmi_migoto.select_fmt_manual"
+    bl_label = "Select Format File"
+
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(
+        default="*.fmt",
+        options={'HIDDEN'},
+    )
+    pairs_json: bpy.props.StringProperty(options={'HIDDEN'})
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def execute(self, context):
+        fmt_path = bpy.path.abspath(self.filepath)
+        if not fmt_path.lower().endswith(".fmt"):
+            self.report({'ERROR'}, "Select a .fmt file")
+            return {'CANCELLED'}
+
+        try:
+            pairs = json.loads(self.pairs_json)
+            with open(fmt_path, "r") as f:
+                fmt_text = f.read()
+            return _run_import_buf_with_fmt(self, pairs, fmt_text)
+        except Exception as e:
+            self.report({'ERROR'}, f"Binary 3DM import failed: {e}")
+            return {'CANCELLED'}
+
+
+class IDVMI_OT_Import_CB_Pose_Armature(bpy.types.Operator):
+    """Import a 3DMigoto constant-buffer pose as an armature"""
+    bl_idname = "idvmi_migoto.import_cb_pose_armature"
+    bl_label = "Import Constant Buffer Pose"
+
+    filepath: bpy.props.StringProperty(subtype="FILE_PATH")
+    filter_glob: bpy.props.StringProperty(
+        default="*.txt;*.buf",
+        options={'HIDDEN'},
+    )
+    start_index: bpy.props.IntProperty(
+        name="Start Index",
+        description="First constant-buffer float4 row/register to import",
+        default=0,
+        min=0,
+    )
+    end_index: bpy.props.IntProperty(
+        name="End Index",
+        description="Last constant-buffer float4 row/register to import",
+        default=1019,
+        min=0,
+    )
+    batch_import_related_meshes: bpy.props.BoolProperty(
+        name="Batch Import Relates Meshes",
+        description="Also apply the pose to scene meshes sharing a vbN hash with the selected mesh objects",
+        default=False,
+    )
+
+    def invoke(self, context, event):
+        self.start_index = context.scene.migoto_cb_pose_start_index
+        self.end_index = context.scene.migoto_cb_pose_end_index
+        self.batch_import_related_meshes = (
+            context.scene.migoto_cb_pose_batch_import_related_meshes
+        )
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+
+    def draw(self, context):
+        layout = self.layout
+        layout.prop(self, "start_index")
+        layout.prop(self, "end_index")
+        layout.prop(self, "batch_import_related_meshes")
+
+    def execute(self, context):
+        filepath = bpy.path.abspath(self.filepath)
+        ext = os.path.splitext(filepath)[1].lower()
+
+        context.scene.migoto_cb_pose_start_index = self.start_index
+        context.scene.migoto_cb_pose_end_index = self.end_index
+        context.scene.migoto_cb_pose_batch_import_related_meshes = (
+            self.batch_import_related_meshes
+        )
+
+        if ext not in {".txt", ".buf"}:
+            self.report({'ERROR'}, "Select a .txt or .buf constant-buffer file")
+            return {'CANCELLED'}
+
+        if ext == ".txt" and not self._is_expected_txt_name(filepath):
+            self.report(
+                {'ERROR'},
+                "TXT name must match one of the supported constant-buffer dump formats",
+            )
+            return {'CANCELLED'}
+
+        targets = _get_cb_pose_target_objects(
+            context,
+            self.batch_import_related_meshes,
+        )
+
+        try:
+            arm = import_constant_buffer_pose_armature(
+                context,
+                filepath,
+                self.start_index,
+                self.end_index,
+                target_objs=targets,
+            )
+        except Exception as e:
+            self.report({'ERROR'}, f"Constant-buffer pose import failed: {e}")
+            return {'CANCELLED'}
+
+        self.report(
+            {'INFO'},
+            f"Imported pose armature '{arm.name}' with {len(arm.data.bones)} bones"
+            + (f" and applied it to {len(targets)} mesh(es)" if targets else ""),
+        )
+        return {'FINISHED'}
+
+    @staticmethod
+    def _is_expected_txt_name(filepath):
+        filename = os.path.basename(filepath)
+        return any(pattern.match(filename) for pattern in _CONSTANT_BUFFER_TXT_RES)
+
+
+def _get_cb_pose_target_objects(context, include_related):
+    selected = [
+        obj for obj in context.selected_objects
+        if obj.type == 'MESH'
+    ]
+    if not include_related or not selected:
+        return selected
+
+    selected_hashes = set()
+    for obj in selected:
+        selected_hashes.update(_extract_vb_hashes(obj.name))
+
+    if not selected_hashes:
+        return selected
+
+    targets = []
+    seen = set()
+    for obj in context.scene.objects:
+        if obj.type != 'MESH' or obj.name in seen:
+            continue
+        if selected_hashes.intersection(_extract_vb_hashes(obj.name)):
+            targets.append(obj)
+            seen.add(obj.name)
+
+    return targets
+
+
+def _extract_vb_hashes(name):
+    return {match.group(1).lower() for match in _VB_HASH_RE.finditer(name)}

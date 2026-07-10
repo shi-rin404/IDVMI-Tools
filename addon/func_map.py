@@ -1,8 +1,21 @@
 import bpy
 
 def _draw_import_3dm(layout, scene, context, folder_box):
-    layout.prop(scene, "migoto_import_all_related", text="Import All Relative Files")
+    layout.prop(scene, "migoto_mesh_import_mode")
+    if scene.migoto_mesh_import_mode == 'BUF':
+        layout.prop(scene, "migoto_use_standard_model_format", text="Use standard model format")
+        layout.prop(scene, "migoto_import_all_related_buf", text="Import All Relative Files")
+    else:
+        layout.prop(scene, "migoto_import_all_related_txt", text="Import All Relative Files")
     layout.operator("idvmi_migoto.import_3dm", icon="IMPORT")
+
+
+def _draw_import_cb_pose(layout, scene, context, folder_box):
+    row = layout.row(align=True)
+    row.prop(scene, "migoto_cb_pose_start_index")
+    row.prop(scene, "migoto_cb_pose_end_index")
+    layout.prop(scene, "migoto_cb_pose_batch_import_related_meshes", text="Batch Import Relates Meshes")
+    layout.operator("idvmi_migoto.import_cb_pose_armature", icon="ARMATURE_DATA")
 
 
 def _draw_extract_frame(layout, scene, context, folder_box):
@@ -48,7 +61,8 @@ def _draw_export_mod(layout, scene, context, folder_box):
 def _draw_import_neox_mesh(layout, scene, context, folder_box):
     folder_box.label(text="NeoX Mesh")
     folder_box.prop(scene, "neox_mesh_selector", text="")
-    layout.operator("idvmi_neox.neox_importer", icon="IMPORT")
+    op = layout.operator("idvmi_neox.neox_importer", icon="IMPORT")
+    op.use_scene_selector = True
 
 def _draw_export_neox_mesh(layout, scene, context, folder_box):
     layout.prop(context.scene, "flip_uv_y", text="Flip UV (Y axis)")
@@ -143,6 +157,7 @@ neox_dispatch = {
 
 _3dm_dispatch = {
     'OPT_Import_3DM': _draw_import_3dm,
+    'OPT_Import_CB_Pose': _draw_import_cb_pose,
     'OPT_Extract_Frame': _draw_extract_frame,
     'OPT_Set_Textures': _draw_set_textures,
     'OPT_Export_Mod': _draw_export_mod,
@@ -150,6 +165,7 @@ _3dm_dispatch = {
 
 no_folder_box = [
     'OPT_Import_3DM',
+    'OPT_Import_CB_Pose',
     'OPT_Export_Neox_Mesh',
     'OPT_Socket_Operations'
 ]
