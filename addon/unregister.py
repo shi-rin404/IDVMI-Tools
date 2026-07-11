@@ -22,6 +22,8 @@ def unregister_props():
         lambda: delattr(bpy.types.Scene, "neox_export_selector"),
         lambda: delattr(bpy.types.Scene, "clean_ini"),
         lambda: delattr(bpy.types.Scene, "export_all_relative_meshes"),
+        lambda: delattr(bpy.types.Scene, "clear_unused_materials"),
+        lambda: delattr(bpy.types.Scene, "migoto_save_fmt_file"),
         lambda: delattr(bpy.types.Scene, "custom_metal"),
         lambda: delattr(bpy.types.Scene, "custom_normal"),
         lambda: delattr(bpy.types.Scene, "metal_selector"),

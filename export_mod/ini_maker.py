@@ -10,6 +10,113 @@ from bpy.types import Object, Operator
 from . import shader_textures
 
 
+def ini_maker_combined(
+        Operator: Operator,
+        entries: list[dict],
+        vb0_hash: str,
+        vb_path: os.PathLike,
+        ib_path: os.PathLike,
+        strides: dict,
+        export_path: os.PathLike,
+        ini_path: os.PathLike,
+        frame_dump_path: os.PathLike,
+        context,
+        namespace: str = "",
+        clean_ini: bool = False,
+):
+    if not entries:
+        raise ValueError("No exported mesh entries were provided")
+
+    obj = entries[0]["obj"]
+    vb0_stride = obj["3DMigoto:VB0Stride"]
+    ib_format = obj["3DMigoto:IBFormat"]
+
+    buffer_override_content = f"""[TextureOverride.VertexBuffer_{vb0_hash}]
+hash = {vb0_hash}
+match_priority = 1
+vb0 = Resource.VertexBuffer_{vb0_hash}
+ib = Resource.IndexBuffer_vb0_{vb0_hash}
+
+"""
+
+    diffuse_paths = {}
+    for material_index, entry in enumerate(entries, start=3):
+        draw_call = entry["draw_call"]
+        t0_path = texture_grabber(entry["obj"])
+        diffuse_path = None
+        if t0_path:
+            diffuse_path = _copy_texture(t0_path, export_path)
+            diffuse_paths[draw_call] = diffuse_path
+            buffer_override_content += f"[Resource.DiffuseBackup_{draw_call}]\n\n"
+
+        buffer_override_content += f"""[TextureOverride.{draw_call}_{vb0_hash}]
+hash = {vb0_hash}
+match_priority = {material_index}
+match_first_index = {entry["obj"]["3DMigoto:FirstIndex"]}
+
+"""
+
+        if diffuse_path:
+            buffer_override_content += f"""Resource.DiffuseBackup_{draw_call} = copy ps-t0
+ps-t0 = Resource.Diffuse_{draw_call}
+
+"""
+
+        buffer_override_content += f"""
+handling = skip
+drawindexed = {entry["index_count"]}, {entry["start_index"]}, 0
+
+"""
+
+        if diffuse_path:
+            buffer_override_content += f"""ps-t0 = Resource.DiffuseBackup_{draw_call}
+
+"""
+
+    if context.scene.clear_unused_materials:
+        buffer_override_content += f"""[TextureOverride.{vb0_hash}_Clear]
+hash = {vb0_hash}
+match_priority = 2
+handling = skip
+
+"""
+
+    resources_content = f"""[Resource.VertexBuffer_{vb0_hash}]
+type = buffer
+stride = {vb0_stride}
+filename = {os.path.relpath(vb_path, export_path)}
+
+[Resource.IndexBuffer_vb0_{vb0_hash}]
+type = buffer
+format = {ib_format}
+filename = {os.path.relpath(ib_path, export_path)}
+
+"""
+
+    for entry in entries:
+        draw_call = entry["draw_call"]
+        diffuse_path = diffuse_paths.get(draw_call)
+        if not diffuse_path:
+            continue
+        resources_content += f"""[Resource.Diffuse_{draw_call}]
+filename = {os.path.relpath(diffuse_path, export_path)}
+
+"""
+
+    if clean_ini:
+        buffer_override_path = ini_path[::-1].replace("mod.ini"[::-1], "BufferOverride.ini"[::-1], 1)[::-1]
+        resources_path = ini_path[::-1].replace("mod.ini"[::-1], "Resources.ini"[::-1], 1)[::-1]
+
+        with open(buffer_override_path, "w") as file:
+            file.write(f"namespace = {namespace}\n\n{buffer_override_content}")
+
+        with open(resources_path, "w") as file:
+            file.write(f"namespace = {namespace}\n\n{resources_content}")
+    else:
+        with open(ini_path, "w") as file:
+            file.write(f"; ======= Overrides:\n\n{buffer_override_content}\n; ======= Resources:\n\n{resources_content}")
+
+
 def ini_maker(
         Operator: Operator,
         draw_call: str,

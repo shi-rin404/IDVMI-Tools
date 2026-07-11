@@ -218,6 +218,18 @@ def register_props():
         default=True,
     )
 
+    bpy.types.Scene.clear_unused_materials = bpy.props.BoolProperty(
+        name="Clear Unused Materials",
+        description="Skip unprocessed draw calls that share the exported vb0 hash",
+        default=True,
+    )
+
+    bpy.types.Scene.migoto_save_fmt_file = bpy.props.BoolProperty(
+        name="Save *.fmt file",
+        description="Save a 3DMigoto .fmt layout reference file during export",
+        default=False,
+    )
+
     bpy.types.Scene.namespace_textbox = bpy.props.StringProperty(
         name="Namespace Name",
         description="Specify an unique custom ID for your mod. If you pick a name that already taken by another mod, both the mods will conflict",

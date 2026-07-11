@@ -47,6 +47,8 @@ def _draw_export_mod(layout, scene, context, folder_box):
 
     # Options
     layout.prop(context.scene, "export_all_relative_meshes", text="Export All Relative Meshes")
+    layout.prop(context.scene, "clear_unused_materials", text="Clear Unused Materials")
+    layout.prop(context.scene, "migoto_save_fmt_file", text="Save *.fmt file")
     layout.prop(context.scene, "clean_ini", text="Clean INI")
     if context.scene.clean_ini:
         box_clean_ini = layout.box()

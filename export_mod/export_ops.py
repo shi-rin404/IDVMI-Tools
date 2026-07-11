@@ -1,5 +1,4 @@
 import collections
-import json
 import os
 import re
 
@@ -20,7 +19,6 @@ from .datahandling import (
     Fatal,
     custom_attributes_float,
     custom_attributes_int,
-    keys_to_ints,
     mesh_triangulate,
 )
 from .datastructures import (
@@ -30,7 +28,7 @@ from .datastructures import (
     VertexBufferGroup,
 )
 
-from .ini_maker import ini_maker, ini_maker_many
+from .ini_maker import ini_maker_combined
 
 
 _MIGOTO_OBJECT_RE = re.compile(r"(\d{6})-vb0=([a-f0-9]{8})(?:-|\.|$)", re.IGNORECASE)
@@ -119,47 +117,35 @@ class Export3DMigoto(Operator, ExportHelper):
                 self.report({"ERROR"}, "No visible relative 3DMigoto mesh objects found to export!")
                 return {"CANCELLED"}
 
-            ini_entries = []
+            combined_vb_path = os.path.join(export_path, "Meshes", f"vb0_{vb0_hash}.vb")
+            combined_ib_path = os.path.join(export_path, "Meshes", f"vb0_{vb0_hash}.ib")
+            combined_fmt_path = os.path.join(export_path, "Meshes", f"vb0_{vb0_hash}.fmt")
 
-            for export_obj in export_objs:
-                export_obj_info = _parse_migoto_object_name(export_obj)
-                if export_obj_info is None:
-                    continue
-                draw_call, export_vb0_hash = export_obj_info
+            save_fmt_file = context.scene.migoto_save_fmt_file
+            combined_vb, combined_ib, combined_strides, ini_entries = export_3dmigoto_combined(
+                self,
+                context,
+                export_objs,
+                combined_vb_path,
+                combined_ib_path,
+                combined_fmt_path,
+                save_fmt_file,
+            )
 
-                vb_path = os.path.join(export_path, "Meshes", f"{draw_call}_{export_vb0_hash}.vb")
-                ib_path = os.path.join(export_path, "Meshes", f"{draw_call}_{export_vb0_hash}.ib")
-                fmt_path = os.path.join(export_path, "Meshes", f"{draw_call}_{export_vb0_hash}.fmt")
-
-                self.flip_normal = export_obj.get("3DMigoto:FlipNormal", False)
-                self.flip_tangent = export_obj.get("3DMigoto:FlipTangent", False)
-                self.flip_winding = export_obj.get("3DMigoto:FlipWinding", False)
-                self.flip_mesh = export_obj.get("3DMigoto:FlipMesh", False)
-                # FIXME: ExportHelper will check for overwriting vb_path, but not ib_path
-                export_3dmigoto(self, context, vb_path, ib_path, fmt_path, ini_path, obj=export_obj)
-                ini_entries.append({
-                    "draw_call": draw_call,
-                    "vb0_hash": export_vb0_hash,
-                    "vb_path": vb_path + "0",
-                    "ib_path": ib_path,
-                    "obj": export_obj,
-                })
-
-            if context.scene.export_all_relative_meshes:
-                ini_maker_many(
-                    self,
-                    ini_entries,
-                    export_path,
-                    ini_path,
-                    bpy.path.abspath(context.scene.frame_dump_selector),
-                    context,
-                    namespace if clean_ini else "",
-                    clean_ini,
-                )
-            elif not clean_ini:
-                ini_maker(self, vb0_draw_call, vb0_hash, ini_entries[0]["vb_path"], ini_entries[0]["ib_path"], export_path, ini_path, bpy.path.abspath(context.scene.frame_dump_selector), context, obj)
-            else:
-                ini_maker(self, vb0_draw_call, vb0_hash, ini_entries[0]["vb_path"], ini_entries[0]["ib_path"], export_path, ini_path, bpy.path.abspath(context.scene.frame_dump_selector), context, obj, namespace, clean_ini)
+            ini_maker_combined(
+                self,
+                ini_entries,
+                vb0_hash,
+                combined_vb_path + "0",
+                combined_ib_path,
+                combined_strides,
+                export_path,
+                ini_path,
+                bpy.path.abspath(context.scene.frame_dump_selector),
+                context,
+                namespace if clean_ini else "",
+                clean_ini,
+            )
         except Fatal as e:
             self.report({"ERROR"}, str(e))
             return {"CANCELLED"}
@@ -338,9 +324,7 @@ def blender_vertex_to_3dmigoto_vertex(
     return vertex
 
 
-def export_3dmigoto(
-    operator: Operator, context: Context, vb_path, ib_path, fmt_path, ini_path, obj=None
-):
+def build_3dmigoto_buffers(operator: Operator, context: Context, obj=None):
     obj = obj or context.object
     if obj is None:
         raise Fatal("No object selected")
@@ -477,38 +461,97 @@ def export_3dmigoto(
     else:
         raise Fatal('topology "%s" is not supported for export' % vb.topology)
 
-    vgmaps = {
-        k[15:]: keys_to_ints(v)
-        for k, v in obj.items()
-        if k.startswith("3DMigoto:VGMap:")
-    }
+    return vb, ib, strides
 
-    if "" not in vgmaps:
-        vb.write(vb_path, strides, operator=operator)
 
-    for suffix, vgmap in vgmaps.items():
-        ib_path = vb_path
-        if suffix:
-            ib_path = f"{vb_path.parent / vb_path.stem}-{suffix}{vb_path.suffix}"
-        vgmap_path = (ib_path.parent / ib_path.stem) + ".vgmap"
-        print("Exporting %s..." % ib_path)
-        vb.remap_blendindices(obj, vgmap)
-        vb.write(ib_path, strides, operator=operator)
-        vb.revert_blendindices_remap()
-        sorted_vgmap = collections.OrderedDict(
-            sorted(vgmap.items(), key=lambda x: x[1])
-        )
-        json.dump(sorted_vgmap, open(vgmap_path, "w"), indent=2)
+def write_3dmigoto_buffers(operator: Operator, vb, ib, strides, vb_path, ib_path, fmt_path, save_fmt_file=True):
+    vb_path = Path(vb_path)
+    ib_path = Path(ib_path)
+    fmt_path = Path(fmt_path)
+
+    vb.write(vb_path, strides, operator=operator)
 
     if ib is not None:
-        ib.write(open(ib_path, "wb"), operator=operator)
+        with open(ib_path, "wb") as output:
+            ib.write(output, operator=operator)
 
-    # Write format reference file
-    write_fmt_file(open(fmt_path, "w"), vb, ib, strides)
+    if save_fmt_file:
+        with open(fmt_path, "w") as output:
+            write_fmt_file(output, vb, ib, strides)
 
-    # Not ready yet
-    # if ini_path:
-    #    write_ini_file(open(ini_path, 'w'), vb, vb_path, ib, ib_path, strides, obj, orig_topology)
+
+def export_3dmigoto(operator: Operator, context: Context, vb_path, ib_path, fmt_path, ini_path, obj=None):
+    vb, ib, strides = build_3dmigoto_buffers(operator, context, obj)
+    save_fmt_file = getattr(context.scene, "migoto_save_fmt_file", False)
+    write_3dmigoto_buffers(operator, vb, ib, strides, vb_path, ib_path, fmt_path, save_fmt_file)
+    return vb, ib, strides
+
+
+def export_3dmigoto_combined(operator: Operator, context: Context, export_objs, vb_path, ib_path, fmt_path, save_fmt_file=True):
+    combined_vb = None
+    combined_ib = None
+    combined_strides = None
+    ini_entries = []
+
+    for export_obj in export_objs:
+        export_obj_info = _parse_migoto_object_name(export_obj)
+        if export_obj_info is None:
+            continue
+
+        draw_call, export_vb0_hash = export_obj_info
+
+        operator.flip_normal = export_obj.get("3DMigoto:FlipNormal", False)
+        operator.flip_tangent = export_obj.get("3DMigoto:FlipTangent", False)
+        operator.flip_winding = export_obj.get("3DMigoto:FlipWinding", False)
+        operator.flip_mesh = export_obj.get("3DMigoto:FlipMesh", False)
+
+        vb, ib, strides = build_3dmigoto_buffers(operator, context, export_obj)
+        if ib is None:
+            raise Fatal("Combined export requires indexed meshes")
+
+        vgmaps = [k for k in export_obj.keys() if k.startswith("3DMigoto:VGMap:")]
+        if vgmaps:
+            raise Fatal("Combined export does not support 3DMigoto vertex group maps yet")
+
+        if combined_vb is None:
+            combined_vb = VertexBufferGroup(layout=vb.layout, topology=vb.topology)
+            combined_vb.flag_invalid_semantics()
+            combined_ib = IndexBuffer(ib.format)
+            combined_ib.topology = ib.topology
+            combined_strides = strides
+        else:
+            if combined_vb.layout != vb.layout:
+                raise Fatal("Cannot combine meshes with different vertex layouts")
+            if combined_vb.topology != vb.topology:
+                raise Fatal("Cannot combine meshes with different topologies")
+            if combined_ib.format != ib.format:
+                raise Fatal("Cannot combine meshes with different index buffer formats")
+            if combined_strides != strides:
+                raise Fatal("Cannot combine meshes with different vertex buffer strides")
+
+        start_index = len(combined_ib)
+        vertex_offset = len(combined_vb)
+        index_count = len(ib)
+
+        combined_vb.vertices.extend(vb.vertices)
+        combined_vb.vertex_count = len(combined_vb.vertices)
+
+        for face in ib.faces:
+            combined_ib.append(tuple(index + vertex_offset for index in face))
+
+        ini_entries.append({
+            "draw_call": draw_call,
+            "vb0_hash": export_vb0_hash,
+            "start_index": start_index,
+            "index_count": index_count,
+            "obj": export_obj,
+        })
+
+    if combined_vb is None or combined_ib is None:
+        raise Fatal("No meshes were exported")
+
+    write_3dmigoto_buffers(operator, combined_vb, combined_ib, combined_strides, vb_path, ib_path, fmt_path, save_fmt_file)
+    return combined_vb, combined_ib, combined_strides, ini_entries
 
 def normal_export_translation(
     layouts: list[BufferLayout], semantic: Semantic, flip: bool
