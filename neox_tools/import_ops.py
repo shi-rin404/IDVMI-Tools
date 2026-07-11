@@ -202,7 +202,8 @@ def import_per_material(model, obj_name: str, operator):
             log.write("Creating bones...\n"); log.flush()
             def matrix_to_blender(matrix_4):
                 """Convert 4x4 matrix to Blender coordinate system and extract translation"""
-                return (M_game_to_blender @ Matrix(matrix_4.tolist()).transposed()).to_translation()
+                C = Matrix(matrix_4.tolist()).transposed()
+                return (M_game_to_blender @ C).to_translation()
 
             def find_child(bone_name: str):
                 """Find first child of a bone"""

@@ -53,17 +53,19 @@ def ini_maker(
     else:
         ini_config["diffuse_exists"] = False
    
-    metal_slot = context.scene.metal_slot_selector
-    normal_slot = context.scene.normal_slot_selector
+    metal_slot = f"t{context.scene.metal_slot_selector}"
+    normal_slot = f"t{context.scene.normal_slot_selector}"
+    metal_hash = hashes.get(metal_slot)
+    normal_hash = hashes.get(normal_slot)
 
     # # # METAL # # #
-    if not context.scene.custom_metal and hashes[metal_slot]:
-        with open(os.path.join(export_path, "Texture", f"{hashes[metal_slot]}.dds"), "wb") as file:        
+    if not context.scene.custom_metal and metal_hash:
+        with open(os.path.join(export_path, "Texture", f"{metal_hash}.dds"), "wb") as file:        
             file.write(
                 base64.b64decode(shader_textures.default_metal)
             )
         ini_config["metal_exists"] = True
-        ini_config["metal_path"] = os.path.join(export_path, "Texture", f"{hashes[metal_slot]}.dds")
+        ini_config["metal_path"] = os.path.join(export_path, "Texture", f"{metal_hash}.dds")
     elif context.scene.custom_metal and context.scene.metal_selector:
         shutil.copy(bpy.path.abspath(context.scene.metal_selector), os.path.join(export_path, "Texture", os.path.basename(context.scene.metal_selector)))
         ini_config["metal_exists"] = True
@@ -72,13 +74,13 @@ def ini_maker(
         ini_config["metal_exists"] = False
 
     # # # NORMAL # # #
-    if not context.scene.custom_normal and hashes[normal_slot]:
-        with open(os.path.join(export_path, "Texture", f"{hashes[normal_slot]}.dds"), "wb") as file:
+    if not context.scene.custom_normal and normal_hash:
+        with open(os.path.join(export_path, "Texture", f"{normal_hash}.dds"), "wb") as file:
             file.write(
                 base64.b64decode(shader_textures.default_normal)
             )
         ini_config["normal_exists"] = True
-        ini_config["normal_path"] = os.path.join(export_path, "Texture", f"{hashes[normal_slot]}.dds")
+        ini_config["normal_path"] = os.path.join(export_path, "Texture", f"{normal_hash}.dds")
     elif context.scene.custom_normal and context.scene.normal_selector:
         shutil.copy(bpy.path.abspath(context.scene.normal_selector), os.path.join(export_path, "Texture", os.path.basename(context.scene.normal_selector)))
         ini_config["normal_exists"] = True

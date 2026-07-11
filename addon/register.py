@@ -237,23 +237,16 @@ def register_props():
         default=""     # .blend'e göre relatif
     )
 
-    bpy.types.Scene.metal_slot_selector = bpy.props.EnumProperty(
+    bpy.types.Scene.metal_slot_selector = bpy.props.IntProperty(
         name="Metal",
-        description="Select the action you want to do",
-        items=[            
-            ('t9', "Slot: t9", "Old metal slot"),
-            ('t10', "Slot: t10", "New metal slot"),
-            ('t11', "Slot: t11", "Newest metal slot"),
-        ],
-        default='t10'
+        description="Metal texture t slot",
+        default=10,
+        min=0,
     )    
 
-    bpy.types.Scene.normal_slot_selector = bpy.props.EnumProperty(
+    bpy.types.Scene.normal_slot_selector = bpy.props.IntProperty(
         name="Normal",
-        description="Select the action you want to do",
-        items=[            
-            ('t10', "Slot: t10", "Old normal slot"),
-            ('t11', "Slot: t11", "New normal slot"),
-        ],
-        default='t11'
+        description="Normal texture t slot",
+        default=11,
+        min=0,
     )    

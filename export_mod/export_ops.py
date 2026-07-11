@@ -55,18 +55,22 @@ class Export3DMigoto(Operator, ExportHelper):
             if clean_ini:
                 if not context.scene.namespace_textbox.strip():
                     self.report({"ERROR"}, "Specify a namespace name or disable 'Clean INI' option!")
+                    return {"CANCELLED"}
                 else:
                     namespace = context.scene.namespace_textbox.strip().replace(" ","")
 
             obj = context.object
+            if obj is None:
+                self.report({"ERROR"}, "Select a 3DMigoto mesh object to export!")
+                return {"CANCELLED"}
 
             export_path = bpy.path.abspath(context.scene.export_selector)
-            obj_migoto_info = re.search(r"(\d{6})-vb0=([a-f0-9]{8}).*?.txt", obj.name)
+            obj_migoto_info = re.search(r"(\d{6})-vb0=([a-f0-9]{8})(?:-|\.|$)", obj.name, re.IGNORECASE)
+            if obj_migoto_info is None:
+                self.report({"ERROR"}, "The selected object name is not in '<draw_call>-vb0=<hash>' format!")
+                return {"CANCELLED"}
             vb0_draw_call = obj_migoto_info.group(1)
-            vb0_hash = obj_migoto_info.group(2)
-
-            if not vb0_draw_call or not vb0_hash:
-                self.report({"ERROR"}, "The selected object name is not in 'DRAW_CALL-HASH*.txt' format!")
+            vb0_hash = obj_migoto_info.group(2).lower()
 
             if not os.path.isdir(os.path.join(export_path, "Meshes")):
                 os.mkdir(os.path.join(export_path, "Meshes"))
@@ -315,13 +319,15 @@ def export_3dmigoto(
     for uv_layer in mesh.uv_layers:
         texcoords = {}
 
+        flip_texcoord_v = bool(context.scene.flip_uv_y)
         try:
-            flip_texcoord_v = obj["3DMigoto:" + uv_layer.name]["flip_v"]
-            if flip_texcoord_v:
-                flip_uv = lambda uv: (uv[0], 1.0 - uv[1])
-            else:
-                flip_uv = lambda uv: uv
+            flip_texcoord_v = flip_texcoord_v or obj["3DMigoto:" + uv_layer.name]["flip_v"]
         except KeyError:
+            pass
+
+        if flip_texcoord_v:
+            flip_uv = lambda uv: (uv[0], 1.0 - uv[1])
+        else:
             flip_uv = lambda uv: uv
 
         for loop in mesh.loops:

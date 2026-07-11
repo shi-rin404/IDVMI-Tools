@@ -302,11 +302,12 @@ def _vertex_buffer_group_to_numpy(vbg: VertexBufferGroup) -> NumpyBuffer:
     return NumpyBuffer(vertex_layout, vertex_arr)
 
 
-def _parse_vertex_buffer(vb_path: str) -> NumpyBuffer:
-    return _vertex_buffer_group_to_numpy(VertexBufferGroup([vb_path]))
+def _parse_vertex_buffer(vb_path: str) -> tuple[NumpyBuffer, VertexBufferGroup]:
+    vbg = VertexBufferGroup([vb_path])
+    return _vertex_buffer_group_to_numpy(vbg), vbg
 
 
-def _parse_vertex_buffer_bin(vb_path: str, fmt_text: str) -> NumpyBuffer:
+def _parse_vertex_buffer_bin(vb_path: str, fmt_text: str) -> tuple[NumpyBuffer, VertexBufferGroup]:
     layout = InputLayout()
     idx = _get_vb_index(vb_path)
     vb = IndividualVertexBuffer(idx, io.StringIO(fmt_text), layout, False)
@@ -324,22 +325,22 @@ def _parse_vertex_buffer_bin(vb_path: str, fmt_text: str) -> NumpyBuffer:
     vbg.topology = vb.topology
     vbg.flag_invalid_semantics()
     vbg.merge_vbs(vbg.vbs)
-    return _vertex_buffer_group_to_numpy(vbg)
+    return _vertex_buffer_group_to_numpy(vbg), vbg
 
 
-def _parse_index_buffer(ib_path: str) -> NumpyBuffer:
+def _parse_index_buffer(ib_path: str) -> tuple[NumpyBuffer, IndexBuffer]:
     with open(ib_path, 'r') as f:
         ib = IndexBuffer(f)
 
-    return _index_buffer_to_numpy(ib)
+    return _index_buffer_to_numpy(ib), ib
 
 
-def _parse_index_buffer_bin(ib_path: str, fmt_text: str) -> NumpyBuffer:
+def _parse_index_buffer_bin(ib_path: str, fmt_text: str) -> tuple[NumpyBuffer, IndexBuffer]:
     ib = IndexBuffer(io.StringIO(fmt_text), load_indices=False)
     with open(ib_path, "rb") as f:
         ib.parse_ib_bin(f)
 
-    return _index_buffer_to_numpy(ib)
+    return _index_buffer_to_numpy(ib), ib
 
 
 def _index_buffer_to_numpy(ib: IndexBuffer) -> NumpyBuffer:
@@ -370,20 +371,62 @@ def _get_vb_index(vb_path):
 def _build_mesh(vb_path: str, ib_path: str, name: str):
     """Parse buffers and create a Blender object. Returns (mesh_data, obj).
     Raises on any failure — does NOT call operator.report."""
-    vertex_buffer = _parse_vertex_buffer(vb_path)
-    index_buffer  = _parse_index_buffer(ib_path)
+    vertex_buffer, vertex_metadata = _parse_vertex_buffer(vb_path)
+    index_buffer, index_metadata = _parse_index_buffer(ib_path)
 
-    return _build_mesh_from_buffers(vertex_buffer, index_buffer, name)
+    return _build_mesh_from_buffers(
+        vertex_buffer,
+        index_buffer,
+        name,
+        vertex_metadata,
+        index_metadata,
+    )
 
 
 def _build_mesh_buf(vb_path: str, ib_path: str, fmt_text: str, name: str):
-    vertex_buffer = _parse_vertex_buffer_bin(vb_path, fmt_text)
-    index_buffer = _parse_index_buffer_bin(ib_path, fmt_text)
+    vertex_buffer, vertex_metadata = _parse_vertex_buffer_bin(vb_path, fmt_text)
+    index_buffer, index_metadata = _parse_index_buffer_bin(ib_path, fmt_text)
 
-    return _build_mesh_from_buffers(vertex_buffer, index_buffer, name)
+    return _build_mesh_from_buffers(
+        vertex_buffer,
+        index_buffer,
+        name,
+        vertex_metadata,
+        index_metadata,
+    )
 
 
-def _build_mesh_from_buffers(vertex_buffer, index_buffer, name: str):
+def _set_3dmigoto_custom_properties(obj, vertex_metadata, index_metadata):
+    obj["3DMigoto:VBLayout"] = vertex_metadata.layout.serialise()
+    obj["3DMigoto:Topology"] = vertex_metadata.topology
+    obj["3DMigoto:FirstVertex"] = vertex_metadata.first
+    obj["3DMigoto:VertexCount"] = vertex_metadata.vertex_count
+
+    for idx, vb in vertex_metadata.slots.items():
+        obj[f"3DMigoto:VB{idx}Stride"] = vb.stride
+
+    obj["3DMigoto:IBFormat"] = index_metadata.format
+    obj["3DMigoto:FirstIndex"] = index_metadata.first
+    obj["3DMigoto:IndexCount"] = index_metadata.index_count
+
+
+def _mirror_uv_y(mesh_data, obj, enabled):
+    for uv_layer in mesh_data.uv_layers:
+        obj["3DMigoto:" + uv_layer.name] = {"flip_v": enabled}
+        if not enabled:
+            continue
+
+        for loop_uv in uv_layer.data:
+            loop_uv.uv.y = 1.0 - loop_uv.uv.y
+
+
+def _build_mesh_from_buffers(
+    vertex_buffer,
+    index_buffer,
+    name: str,
+    vertex_metadata,
+    index_metadata,
+):
     mesh_data = bpy.data.meshes.new(name)
     obj = bpy.data.objects.new(name, mesh_data)
     obj.rotation_euler[0] = math.radians(90)
@@ -393,6 +436,8 @@ def _build_mesh_from_buffers(vertex_buffer, index_buffer, name: str):
         BlenderDataImporter().set_data(
             obj, mesh_data, index_buffer, vertex_buffer, {}, {},
         )
+        _mirror_uv_y(mesh_data, obj, bpy.context.scene.flip_uv_y)
+        _set_3dmigoto_custom_properties(obj, vertex_metadata, index_metadata)
     except Exception:
         bpy.data.objects.remove(obj, do_unlink=True)
         bpy.data.meshes.remove(mesh_data)

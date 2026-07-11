@@ -2,6 +2,7 @@ import bpy
 
 def _draw_import_3dm(layout, scene, context, folder_box):
     layout.prop(scene, "migoto_mesh_import_mode")
+    layout.prop(scene, "flip_uv_y", text="Mirror UV Y")
     if scene.migoto_mesh_import_mode == 'BUF':
         layout.prop(scene, "migoto_use_standard_model_format", text="Use standard model format")
         layout.prop(scene, "migoto_import_all_related_buf", text="Import All Relative Files")
@@ -36,8 +37,13 @@ def _draw_export_mod(layout, scene, context, folder_box):
     folder_box.prop(scene, "export_selector", text="")
 
     slot_selectors = layout.box()
-    slot_selectors.prop(scene, "metal_slot_selector")
-    slot_selectors.prop(scene, "normal_slot_selector")
+    slot_selectors.prop(scene, "flip_uv_y", text="Mirror UV Y")
+    metal_row = slot_selectors.row(align=True)
+    metal_row.label(text="Metal: t")
+    metal_row.prop(scene, "metal_slot_selector", text="")
+    normal_row = slot_selectors.row(align=True)
+    normal_row.label(text="Normal: t")
+    normal_row.prop(scene, "normal_slot_selector", text="")
 
     # Options
     layout.prop(context.scene, "clean_ini", text="Clean INI")
