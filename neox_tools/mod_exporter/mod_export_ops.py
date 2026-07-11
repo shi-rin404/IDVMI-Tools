@@ -5,6 +5,16 @@ from .rig_handler import rig_handler
 from .gim_handler import gim_handler
 from .mod_json_maker import mod_json_maker
 
+
+def _is_documents_res_mod_path(path):
+    parts = [
+        part.lower()
+        for part in os.path.normpath(path).replace("\\", "/").rstrip("/").split("/")
+        if part
+    ]
+    return parts[-3:] == ["documents", "res", "mod"]
+
+
 class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
     bl_idname = "idvmi_neox.neox_mod_exporter"
     bl_label = "Export NeoX Mod"
@@ -18,7 +28,7 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
         with open(log_file, "a") as log:
             export_path = bpy.path.abspath(context.scene.neox_export_selector)
 
-            if export_path.endswith("\\res\\mod") or export_path.endswith("/res/mod"):
+            if _is_documents_res_mod_path(export_path):
                 export_path = os.path.join(export_path, context.scene.neox_mod_name)
             
             os.makedirs(export_path, exist_ok=True)
