@@ -16,7 +16,7 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
             log.write("--- New export session started ---\n"); log.flush()
         
         with open(log_file, "a") as log:
-            export_path = bpy.path.abspath(context.scene.export_selector)
+            export_path = bpy.path.abspath(context.scene.neox_export_selector)
 
             if export_path.endswith("\\res\\mod") or export_path.endswith("/res/mod"):
                 export_path = os.path.join(export_path, context.scene.neox_mod_name)

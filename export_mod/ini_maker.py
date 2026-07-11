@@ -1,7 +1,14 @@
+import base64
+import json
+import os
+import re
+import shutil
+
 import bpy
-from bpy.types import Operator, Object
-import os, re, json, base64, shutil
+from bpy.types import Object, Operator
+
 from . import shader_textures
+
 
 def ini_maker(
         Operator: Operator,
@@ -13,107 +20,172 @@ def ini_maker(
         ini_path: os.PathLike,
         frame_dump_path: os.PathLike,
         context,
-        obj: Object,   
-        namespace: str = "",     
+        obj: Object,
+        namespace: str = "",
+        clean_ini: bool = False,
+):
+    ini_maker_many(
+        Operator,
+        [{
+            "draw_call": draw_call,
+            "vb0_hash": vb0_hash,
+            "vb_path": vb_path,
+            "ib_path": ib_path,
+            "obj": obj,
+        }],
+        export_path,
+        ini_path,
+        frame_dump_path,
+        context,
+        namespace,
+        clean_ini,
+    )
+
+
+def ini_maker_many(
+        Operator: Operator,
+        entries: list[dict],
+        export_path: os.PathLike,
+        ini_path: os.PathLike,
+        frame_dump_path: os.PathLike,
+        context,
+        namespace: str = "",
         clean_ini: bool = False,
 ):
     files = os.listdir(frame_dump_path)
-    hashes = {}
+    texture_usage = _load_texture_usage(frame_dump_path, files)
+    multi_entry = len(entries) > 1
 
-    if "TextureUsage.json" in files:
-        with open(os.path.join(frame_dump_path, "TextureUsage.json"), "r") as file:
-            texture_usage = json.load(file)
+    buffer_override_content = ""
+    resources_content = ""
+    delete_override_content = ""
+    delete_override_hashes = set()
 
-        if "t0_hash" not in texture_usage[draw_call]:
-            raise Exception("TextureUsage.json format is wrong")
-        
-        hashes["t0"] = texture_usage[draw_call]["t0"]
-        hashes["t9"] = texture_usage.get(draw_call, {}).get("t9") or None
-        hashes["t10"] = texture_usage.get(draw_call, {}).get("t10") or None
-        hashes["t11"] = texture_usage.get(draw_call, {}).get("t11") or None            
+    for entry in entries:
+        entry_overrides, entry_resources = _make_ini_entry(
+            entry["draw_call"],
+            entry["vb0_hash"],
+            entry["vb_path"],
+            entry["ib_path"],
+            export_path,
+            frame_dump_path,
+            files,
+            texture_usage,
+            context,
+            entry["obj"],
+            backup_suffix=f"_{entry['draw_call']}" if multi_entry else "",
+        )
+        buffer_override_content += entry_overrides
+        resources_content += entry_resources
+
+        vb0_hash = entry["vb0_hash"]
+        if vb0_hash not in delete_override_hashes:
+            delete_override_content += f"""[TextureOverride.VertexBuffer_{vb0_hash}.Delete]
+hash = {vb0_hash}
+handling = skip
+
+"""
+            delete_override_hashes.add(vb0_hash)
+
+    buffer_override_content += delete_override_content
+
+    if clean_ini:
+        buffer_override_path = ini_path[::-1].replace("mod.ini"[::-1], "BufferOverride.ini"[::-1], 1)[::-1]
+        resources_path = ini_path[::-1].replace("mod.ini"[::-1], "Resources.ini"[::-1], 1)[::-1]
+
+        with open(buffer_override_path, "w") as file:
+            file.write(f"namespace = {namespace}\n\n{buffer_override_content}")
+
+        with open(resources_path, "w") as file:
+            file.write(f"namespace = {namespace}\n\n{resources_content}")
     else:
-        for file in files:
-            for n in (0,9,10,11):
-                result = re.search(fr"{draw_call}(\.\d+-\[.*?\])*-ps-t{n}=([a-f0-9]{{8}})", file)                
-                if result:
-                    hashes[f"t{n}"] = result.group(2)
+        with open(ini_path, "w") as file:
+            file.write(f"; ======= Overrides:\n\n{buffer_override_content}\n; ======= Resources:\n\n{resources_content}")
 
-    ini_config = {}    
-    
-    # # # DIFFUSE # # #
+
+def _make_ini_entry(
+        draw_call: str,
+        vb0_hash: str,
+        vb_path: os.PathLike,
+        ib_path: os.PathLike,
+        export_path: os.PathLike,
+        frame_dump_path: os.PathLike,
+        files: list[str],
+        texture_usage: dict | None,
+        context,
+        obj: Object,
+        backup_suffix: str = "",
+):
+    hashes = _texture_hashes(draw_call, files, texture_usage)
+    ini_config = {}
+
     t0_path = texture_grabber(obj)
-
     if t0_path:
-        if not os.path.isdir(os.path.join(export_path, "Texture")):
-            os.mkdir(os.path.join(export_path, "Texture"))
-            
-        shutil.copy(t0_path, os.path.join(export_path, "Texture", os.path.basename(t0_path)))
         ini_config["diffuse_exists"] = True
-        ini_config["diffuse_path"] = os.path.join(export_path, "Texture", os.path.basename(t0_path))
+        ini_config["diffuse_path"] = _copy_texture(t0_path, export_path)
     else:
         ini_config["diffuse_exists"] = False
-   
+
     metal_slot = f"t{context.scene.metal_slot_selector}"
     normal_slot = f"t{context.scene.normal_slot_selector}"
     metal_hash = hashes.get(metal_slot)
     normal_hash = hashes.get(normal_slot)
 
-    # # # METAL # # #
     if not context.scene.custom_metal and metal_hash:
-        with open(os.path.join(export_path, "Texture", f"{metal_hash}.dds"), "wb") as file:        
-            file.write(
-                base64.b64decode(shader_textures.default_metal)
-            )
+        metal_path = os.path.join(_ensure_texture_dir(export_path), f"{metal_hash}.dds")
+        with open(metal_path, "wb") as file:
+            file.write(base64.b64decode(shader_textures.default_metal))
         ini_config["metal_exists"] = True
-        ini_config["metal_path"] = os.path.join(export_path, "Texture", f"{metal_hash}.dds")
+        ini_config["metal_path"] = metal_path
     elif context.scene.custom_metal and context.scene.metal_selector:
-        shutil.copy(bpy.path.abspath(context.scene.metal_selector), os.path.join(export_path, "Texture", os.path.basename(context.scene.metal_selector)))
         ini_config["metal_exists"] = True
-        ini_config["metal_path"] = os.path.join(export_path, "Texture", os.path.basename(context.scene.metal_selector))
+        ini_config["metal_path"] = _copy_texture(bpy.path.abspath(context.scene.metal_selector), export_path)
     else:
         ini_config["metal_exists"] = False
 
-    # # # NORMAL # # #
     if not context.scene.custom_normal and normal_hash:
-        with open(os.path.join(export_path, "Texture", f"{normal_hash}.dds"), "wb") as file:
-            file.write(
-                base64.b64decode(shader_textures.default_normal)
-            )
+        normal_path = os.path.join(_ensure_texture_dir(export_path), f"{normal_hash}.dds")
+        with open(normal_path, "wb") as file:
+            file.write(base64.b64decode(shader_textures.default_normal))
         ini_config["normal_exists"] = True
-        ini_config["normal_path"] = os.path.join(export_path, "Texture", f"{normal_hash}.dds")
+        ini_config["normal_path"] = normal_path
     elif context.scene.custom_normal and context.scene.normal_selector:
-        shutil.copy(bpy.path.abspath(context.scene.normal_selector), os.path.join(export_path, "Texture", os.path.basename(context.scene.normal_selector)))
         ini_config["normal_exists"] = True
-        ini_config["normal_path"] = os.path.join(export_path, "Texture", os.path.basename(context.scene.normal_selector))
+        ini_config["normal_path"] = _copy_texture(bpy.path.abspath(context.scene.normal_selector), export_path)
     else:
         ini_config["normal_exists"] = False
 
-    ### INI ###    
-    ######## Buffer Override ##########
+    diffuse_backup = f"Resource.DiffuseBackup{backup_suffix}"
+    metal_backup = f"Resource.MetalBackup{backup_suffix}"
+    normal_backup = f"Resource.NormalBackup{backup_suffix}"
+
     buffer_override_content = ""
 
     if ini_config["diffuse_exists"]:
-        buffer_override_content += "[Resource.DiffuseBackup]\n\n"
+        buffer_override_content += f"[{diffuse_backup}]\n\n"
     if ini_config["metal_exists"]:
-        buffer_override_content += "[Resource.MetalBackup]\n\n"
+        buffer_override_content += f"[{metal_backup}]\n\n"
     if ini_config["normal_exists"]:
-        buffer_override_content += "[Resource.NormalBackup]\n\n"
+        buffer_override_content += f"[{normal_backup}]\n\n"
 
     buffer_override_content += f"""[TextureOverride.VertexBuffer_{draw_call}_{vb0_hash}.Draw]
 hash = {vb0_hash}
-match_first_index = {obj["3DMigoto:FirstIndex"]}\n\n"""
+match_first_index = {obj["3DMigoto:FirstIndex"]}
+
+"""
 
     if ini_config["diffuse_exists"]:
-        buffer_override_content += "Resource.DiffuseBackup = copy ps-t0\n"
+        buffer_override_content += f"{diffuse_backup} = copy ps-t0\n"
     if ini_config["metal_exists"]:
-        buffer_override_content += f"Resource.MetalBackup = copy ps-{metal_slot}\n"
+        buffer_override_content += f"{metal_backup} = copy ps-{metal_slot}\n"
     if ini_config["normal_exists"]:
-        buffer_override_content += f"Resource.NormalBackup = copy ps-{normal_slot}\n"
+        buffer_override_content += f"{normal_backup} = copy ps-{normal_slot}\n"
 
     buffer_override_content += "\n"
 
     buffer_override_content += f"""vb0 = Resource.VertexBuffer_{draw_call}_{vb0_hash}
-ib = Resource.IndexBuffer_{draw_call}\n"""
+ib = Resource.IndexBuffer_{draw_call}
+"""
 
     if ini_config["diffuse_exists"]:
         buffer_override_content += f"ps-t0 = Resource.Diffuse_{draw_call}\n"
@@ -123,75 +195,103 @@ ib = Resource.IndexBuffer_{draw_call}\n"""
         buffer_override_content += f"ps-{normal_slot} = Resource.Normal_{draw_call}\n"
 
     buffer_override_content += "\n"
-
-    buffer_override_content += """handling = skip
-drawindexed = auto\n\n"""
+    buffer_override_content += "handling = skip\ndrawindexed = auto\n\n"
 
     if ini_config["diffuse_exists"]:
-        buffer_override_content += "ps-t0 = Resource.DiffuseBackup\n"
+        buffer_override_content += f"ps-t0 = {diffuse_backup}\n"
     if ini_config["metal_exists"]:
-        buffer_override_content += f"ps-{metal_slot} = Resource.MetalBackup\n"
+        buffer_override_content += f"ps-{metal_slot} = {metal_backup}\n"
     if ini_config["normal_exists"]:
-        buffer_override_content += f"ps-{normal_slot} = Resource.NormalBackup\n"
+        buffer_override_content += f"ps-{normal_slot} = {normal_backup}\n"
 
     buffer_override_content += "\n"
 
-    buffer_override_content += f"""[TextureOverride.VertexBuffer_{vb0_hash}.Delete]
-hash = {vb0_hash}
-handling = skip\n\n"""
-
-    ######## Resources ##########
-    resources_content = ""
-
-    resources_content += f"""[Resource.VertexBuffer_{draw_call}_{vb0_hash}]
+    resources_content = f"""[Resource.VertexBuffer_{draw_call}_{vb0_hash}]
 type = buffer
 stride = {obj['3DMigoto:VB0Stride']}
-filename = {os.path.relpath(vb_path, export_path)}\n\n"""
+filename = {os.path.relpath(vb_path, export_path)}
 
-    resources_content += f"""[Resource.IndexBuffer_{draw_call}]
+[Resource.IndexBuffer_{draw_call}]
 type = buffer
 format = {obj['3DMigoto:IBFormat']}
-filename = {os.path.relpath(ib_path, export_path)}\n\n"""
+filename = {os.path.relpath(ib_path, export_path)}
+
+"""
 
     if ini_config["diffuse_exists"]:
         resources_content += f"""[Resource.Diffuse_{draw_call}]
-filename = {os.path.relpath(ini_config['diffuse_path'], export_path)}\n\n"""
+filename = {os.path.relpath(ini_config['diffuse_path'], export_path)}
+
+"""
     if ini_config["metal_exists"]:
         resources_content += f"""[Resource.Metal_{draw_call}]
-filename = {os.path.relpath(ini_config['metal_path'], export_path)}\n\n"""
+filename = {os.path.relpath(ini_config['metal_path'], export_path)}
+
+"""
     if ini_config["normal_exists"]:
         resources_content += f"""[Resource.Normal_{draw_call}]
-filename = {os.path.relpath(ini_config['normal_path'], export_path)}\n\n"""
-        
-    ### WRITE ###
-    if clean_ini:
-        buffer_override_path = ini_path[::-1].replace("mod.ini"[::-1], "BufferOverride.ini"[::-1], 1)[::-1]
-        resources_path = ini_path[::-1].replace("mod.ini"[::-1], "Resources.ini"[::-1], 1)[::-1]
+filename = {os.path.relpath(ini_config['normal_path'], export_path)}
 
-        with open(buffer_override_path, "w") as file:
-            buffer_override_content = f"namespace = {namespace}\n\n" + buffer_override_content
-            file.write(buffer_override_content)
+"""
 
-        with open(resources_path, "w") as file:
-            resources_content = f"namespace = {namespace}\n\n" + resources_content
-            file.write(resources_content)
+    return buffer_override_content, resources_content
 
+
+def _load_texture_usage(frame_dump_path, files):
+    texture_usage_path = None
+    if "TextureUsage.json" in files:
+        texture_usage_path = os.path.join(frame_dump_path, "TextureUsage.json")
     else:
-        with open(ini_path, "w") as file:
-            file.write(f"; ======= Overrides:\n\n{buffer_override_content}\n; ======= Resources:\n\n{resources_content}")
+        character_usage_path = os.path.join(frame_dump_path, "Character", "TextureUsage.json")
+        if os.path.isfile(character_usage_path):
+            texture_usage_path = character_usage_path
+
+    if not texture_usage_path:
+        return None
+
+    with open(texture_usage_path, "r") as file:
+        return json.load(file)
+
+
+def _texture_hashes(draw_call, files, texture_usage):
+    hashes = {}
+
+    if texture_usage:
+        for slot, texture_hash in texture_usage.get(draw_call, {}).items():
+            if re.fullmatch(r"t\d+", slot) and texture_hash:
+                hashes[slot] = texture_hash
+        return hashes
+
+    for file in files:
+        result = re.search(fr"{draw_call}(\.\d+-\[.*?\])*-ps-t(\d+)=([a-f0-9]{{8}})", file, re.IGNORECASE)
+        if result:
+            hashes[f"t{result.group(2)}"] = result.group(3)
+
+    return hashes
+
+
+def _ensure_texture_dir(export_path):
+    texture_dir = os.path.join(export_path, "Texture")
+    if not os.path.isdir(texture_dir):
+        os.mkdir(texture_dir)
+    return texture_dir
+
+
+def _copy_texture(texture_path, export_path):
+    texture_dir = _ensure_texture_dir(export_path)
+    destination = os.path.join(texture_dir, os.path.basename(texture_path))
+    if os.path.abspath(texture_path) != os.path.abspath(destination):
+        shutil.copy(texture_path, destination)
+    return destination
+
 
 def texture_grabber(obj):
     if len(obj.data.materials) > 0:
         material = obj.data.materials[0]
-        
+
         if material and material.use_nodes:
             for node in material.node_tree.nodes:
                 if node.type == 'TEX_IMAGE' and node.image:
-                    t0_path = bpy.path.abspath(node.image.filepath)
-                    break
-            else:
-                t0_path = None
-    else:
-        t0_path = None
-    
-    return t0_path
+                    return bpy.path.abspath(node.image.filepath)
+
+    return None

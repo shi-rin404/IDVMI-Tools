@@ -1,15 +1,29 @@
 import os
+import re
 
-main_dir = os.path.join('C:\\', 'IdentityV2', 'res')
-author_dir = os.path.join('S:\\', '3dmigoto', 'Neox2', 'dwrg', 'res')
+
+GAME_DIR_RE = re.compile(r"^[A-Z]:\\Loading Bay Games\\Identity V\\?$", re.IGNORECASE)
+
+
+def _iter_drive_roots():
+    for drive_ord in range(ord("A"), ord("Z") + 1):
+        yield f"{chr(drive_ord)}:\\"
+
+
+def _find_game_directory():
+    for drive_root in _iter_drive_roots():
+        game_dir = os.path.join(drive_root, "Loading Bay Games", "Identity V")
+        if os.path.isdir(game_dir) and GAME_DIR_RE.match(game_dir):
+            return game_dir
+    return None
 
 def check_game_directory():
-    if os.path.exists(main_dir):
-        if not os.path.exists(os.path.join(main_dir, 'mod')):
-            os.mkdir(os.path.join(main_dir, 'mod'))
-        return os.path.join(main_dir, 'mod')
-    elif os.path.exists(author_dir):
-        if not os.path.exists(os.path.join(author_dir, 'mod')):
-            os.mkdir(os.path.join(author_dir, 'mod'))
-        return os.path.join(author_dir, 'mod')
+    game_dir = _find_game_directory()
+    if game_dir:
+        mod_dir = os.path.join(game_dir, "Documents", "res", "mod")
+        try:
+            os.makedirs(mod_dir, exist_ok=True)
+        except OSError:
+            return ""
+        return mod_dir
     return ""

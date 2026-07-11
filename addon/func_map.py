@@ -33,8 +33,8 @@ def _draw_set_textures(layout, scene, context, folder_box):
 def _draw_export_mod(layout, scene, context, folder_box):
     folder_box.label(text="Frame Dump Folder")
     folder_box.prop(scene, "frame_dump_selector", text="")
-    folder_box.label(text="Export Folder")
-    folder_box.prop(scene, "export_selector", text="")
+    folder_box.label(text="3DM Export Folder")
+    folder_box.prop(scene, "migoto_export_selector", text="")
 
     slot_selectors = layout.box()
     slot_selectors.prop(scene, "flip_uv_y", text="Mirror UV Y")
@@ -46,6 +46,7 @@ def _draw_export_mod(layout, scene, context, folder_box):
     normal_row.prop(scene, "normal_slot_selector", text="")
 
     # Options
+    layout.prop(context.scene, "export_all_relative_meshes", text="Export All Relative Meshes")
     layout.prop(context.scene, "clean_ini", text="Clean INI")
     if context.scene.clean_ini:
         box_clean_ini = layout.box()
@@ -75,8 +76,8 @@ def _draw_export_neox_mesh(layout, scene, context, folder_box):
     layout.operator("idvmi_neox.neox_exporter", icon="EXPORT")
 
 def _draw_export_neox_mod(layout, scene, context, folder_box):
-    folder_box.label(text="Export Folder")
-    folder_box.prop(scene, "export_selector", text="")
+    folder_box.label(text="NeoX Export Folder")
+    folder_box.prop(scene, "neox_export_selector", text="")
 
     mesh_options = layout.box()
     mesh_options.prop(context.scene, "flip_uv_y", text="Flip UV (Y axis)")

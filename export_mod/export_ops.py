@@ -30,7 +30,45 @@ from .datastructures import (
     VertexBufferGroup,
 )
 
-from .ini_maker import ini_maker
+from .ini_maker import ini_maker, ini_maker_many
+
+
+_MIGOTO_OBJECT_RE = re.compile(r"(\d{6})-vb0=([a-f0-9]{8})(?:-|\.|$)", re.IGNORECASE)
+
+
+def _parse_migoto_object_name(obj: Object):
+    obj_migoto_info = _MIGOTO_OBJECT_RE.search(obj.name)
+    if obj_migoto_info is None:
+        return None
+    return obj_migoto_info.group(1), obj_migoto_info.group(2).lower()
+
+
+def _iter_related_export_objects(context, vb0_hash):
+    if not context.scene.export_all_relative_meshes:
+        return [context.object]
+
+    related = []
+    seen_draw_calls = set()
+
+    for obj in bpy.data.objects:
+        if obj.type != "MESH" or obj.hide_get() or not obj.visible_get():
+            continue
+
+        obj_info = _parse_migoto_object_name(obj)
+        if obj_info is None:
+            continue
+
+        draw_call, obj_vb0_hash = obj_info
+        if obj_vb0_hash != vb0_hash:
+            continue
+        if draw_call in seen_draw_calls:
+            raise Fatal(f"Multiple visible meshes use draw call {draw_call}; hide duplicates before exporting all relative meshes")
+
+        seen_draw_calls.add(draw_call)
+        related.append((draw_call, obj_vb0_hash, obj))
+
+    related.sort(key=lambda item: item[0])
+    return [obj for _, _, obj in related]
 
 
 class Export3DMigoto(Operator, ExportHelper):
@@ -64,35 +102,67 @@ class Export3DMigoto(Operator, ExportHelper):
                 self.report({"ERROR"}, "Select a 3DMigoto mesh object to export!")
                 return {"CANCELLED"}
 
-            export_path = bpy.path.abspath(context.scene.export_selector)
-            obj_migoto_info = re.search(r"(\d{6})-vb0=([a-f0-9]{8})(?:-|\.|$)", obj.name, re.IGNORECASE)
+            export_path = bpy.path.abspath(context.scene.migoto_export_selector)
+            obj_migoto_info = _parse_migoto_object_name(obj)
             if obj_migoto_info is None:
                 self.report({"ERROR"}, "The selected object name is not in '<draw_call>-vb0=<hash>' format!")
                 return {"CANCELLED"}
-            vb0_draw_call = obj_migoto_info.group(1)
-            vb0_hash = obj_migoto_info.group(2).lower()
+            vb0_draw_call, vb0_hash = obj_migoto_info
 
             if not os.path.isdir(os.path.join(export_path, "Meshes")):
                 os.mkdir(os.path.join(export_path, "Meshes"))
 
-            vb_path = os.path.join(export_path, "Meshes", f"{vb0_draw_call}_{vb0_hash}.vb")
-            ib_path = os.path.join(export_path, "Meshes", f"{vb0_draw_call}_{vb0_hash}.ib")
-            fmt_path = os.path.join(export_path, "Meshes", f"{vb0_draw_call}_{vb0_hash}.fmt")
             ini_path = os.path.join(export_path, "mod.ini")
-            
-            self.flip_normal = obj.get("3DMigoto:FlipNormal", False)
-            self.flip_tangent = obj.get("3DMigoto:FlipTangent", False)
-            self.flip_winding = obj.get("3DMigoto:FlipWinding", False)
-            self.flip_mesh = obj.get("3DMigoto:FlipMesh", False)
-            # FIXME: ExportHelper will check for overwriting vb_path, but not ib_path
-            export_3dmigoto(self, context, vb_path, ib_path, fmt_path, ini_path)
-            vb_path = vb_path + "0"
-            if not clean_ini:
-                ini_maker(self, vb0_draw_call, vb0_hash, vb_path, ib_path, export_path, ini_path, bpy.path.abspath(context.scene.frame_dump_selector), context, obj)
+
+            export_objs = _iter_related_export_objects(context, vb0_hash)
+            if not export_objs:
+                self.report({"ERROR"}, "No visible relative 3DMigoto mesh objects found to export!")
+                return {"CANCELLED"}
+
+            ini_entries = []
+
+            for export_obj in export_objs:
+                export_obj_info = _parse_migoto_object_name(export_obj)
+                if export_obj_info is None:
+                    continue
+                draw_call, export_vb0_hash = export_obj_info
+
+                vb_path = os.path.join(export_path, "Meshes", f"{draw_call}_{export_vb0_hash}.vb")
+                ib_path = os.path.join(export_path, "Meshes", f"{draw_call}_{export_vb0_hash}.ib")
+                fmt_path = os.path.join(export_path, "Meshes", f"{draw_call}_{export_vb0_hash}.fmt")
+
+                self.flip_normal = export_obj.get("3DMigoto:FlipNormal", False)
+                self.flip_tangent = export_obj.get("3DMigoto:FlipTangent", False)
+                self.flip_winding = export_obj.get("3DMigoto:FlipWinding", False)
+                self.flip_mesh = export_obj.get("3DMigoto:FlipMesh", False)
+                # FIXME: ExportHelper will check for overwriting vb_path, but not ib_path
+                export_3dmigoto(self, context, vb_path, ib_path, fmt_path, ini_path, obj=export_obj)
+                ini_entries.append({
+                    "draw_call": draw_call,
+                    "vb0_hash": export_vb0_hash,
+                    "vb_path": vb_path + "0",
+                    "ib_path": ib_path,
+                    "obj": export_obj,
+                })
+
+            if context.scene.export_all_relative_meshes:
+                ini_maker_many(
+                    self,
+                    ini_entries,
+                    export_path,
+                    ini_path,
+                    bpy.path.abspath(context.scene.frame_dump_selector),
+                    context,
+                    namespace if clean_ini else "",
+                    clean_ini,
+                )
+            elif not clean_ini:
+                ini_maker(self, vb0_draw_call, vb0_hash, ini_entries[0]["vb_path"], ini_entries[0]["ib_path"], export_path, ini_path, bpy.path.abspath(context.scene.frame_dump_selector), context, obj)
             else:
-                ini_maker(self, vb0_draw_call, vb0_hash, vb_path, ib_path, export_path, ini_path, bpy.path.abspath(context.scene.frame_dump_selector), context, obj, namespace, clean_ini)
+                ini_maker(self, vb0_draw_call, vb0_hash, ini_entries[0]["vb_path"], ini_entries[0]["ib_path"], export_path, ini_path, bpy.path.abspath(context.scene.frame_dump_selector), context, obj, namespace, clean_ini)
         except Fatal as e:
             self.report({"ERROR"}, str(e))
+            return {"CANCELLED"}
         return {"FINISHED"}
 
 
@@ -269,9 +339,9 @@ def blender_vertex_to_3dmigoto_vertex(
 
 
 def export_3dmigoto(
-    operator: Operator, context: Context, vb_path, ib_path, fmt_path, ini_path
+    operator: Operator, context: Context, vb_path, ib_path, fmt_path, ini_path, obj=None
 ):
-    obj = context.object
+    obj = obj or context.object
     if obj is None:
         raise Fatal("No object selected")
 

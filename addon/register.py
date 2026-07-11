@@ -192,17 +192,30 @@ def register_props():
         default=""     # .blend'e göre relatif
     )
 
-    bpy.types.Scene.export_selector = bpy.props.StringProperty(
-        name="Export Folder Selector",
-        description="Select a folder",
+    bpy.types.Scene.migoto_export_selector = bpy.props.StringProperty(
+        name="3DM Export Folder Selector",
+        description="Select a 3DM mod export folder",
         subtype='DIR_PATH',
-        default=check_game_directory()     # .blend'e göre relatif
+        default=""
+    )
+
+    bpy.types.Scene.neox_export_selector = bpy.props.StringProperty(
+        name="NeoX Export Folder Selector",
+        description="Select a NeoX mod export folder",
+        subtype='DIR_PATH',
+        default=check_game_directory()
     )
 
     bpy.types.Scene.clean_ini = bpy.props.BoolProperty(
         name="Clean INI",
         description="It makes your mod folder modular. May cause mod conflicts if it get a namespace name that is already taken.",
         default=False
+    )
+
+    bpy.types.Scene.export_all_relative_meshes = bpy.props.BoolProperty(
+        name="Export All Relative Meshes",
+        description="Export every visible imported 3DM mesh that shares the selected mesh vb0 hash",
+        default=True,
     )
 
     bpy.types.Scene.namespace_textbox = bpy.props.StringProperty(
@@ -240,13 +253,13 @@ def register_props():
     bpy.types.Scene.metal_slot_selector = bpy.props.IntProperty(
         name="Metal",
         description="Metal texture t slot",
-        default=10,
+        default=6,
         min=0,
     )    
 
     bpy.types.Scene.normal_slot_selector = bpy.props.IntProperty(
         name="Normal",
         description="Normal texture t slot",
-        default=11,
+        default=7,
         min=0,
     )    
