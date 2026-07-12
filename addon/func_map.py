@@ -79,6 +79,36 @@ def _draw_import_neox_animation(layout, scene, context, folder_box):
     op = layout.operator("idvmi_neox.import_animation", icon="IMPORT")
     op.use_scene_selector = True
 
+def _draw_export_neox_animation(layout, scene, context, folder_box):
+    folder_box.label(text="NeoX Animation")
+    folder_box.prop(scene, "neox_animation_export_selector", text="")
+    folder_box.prop(scene, "neox_animation_skeleton_preset")
+    if scene.neox_animation_skeleton_preset == 'custom':
+        folder_box.label(text="Custom Skeleton Path")
+        folder_box.prop(scene, "neox_animation_custom_skeleton_path", text="")
+
+    options = layout.box()
+    options.prop(scene, "neox_animation_export_loop")
+    options.prop(scene, "neox_animation_export_fps")
+    options.prop(scene, "neox_animation_export_reduce_keys")
+
+    if scene.neox_animation_export_reduce_keys:
+        tolerances = layout.box()
+        tolerances.prop(scene, "neox_animation_position_tolerance")
+        tolerances.prop(scene, "neox_animation_scale_tolerance")
+        tolerances.prop(scene, "neox_animation_rotation_tolerance_degrees")
+
+    op = layout.operator("idvmi_neox.export_animation", icon="EXPORT")
+    op.filepath = scene.neox_animation_export_selector
+    op.skeleton_preset = scene.neox_animation_skeleton_preset
+    op.custom_skeleton_path = scene.neox_animation_custom_skeleton_path
+    op.loop = scene.neox_animation_export_loop
+    op.fps = scene.neox_animation_export_fps
+    op.reduce_keys = scene.neox_animation_export_reduce_keys
+    op.position_tolerance = scene.neox_animation_position_tolerance
+    op.scale_tolerance = scene.neox_animation_scale_tolerance
+    op.rotation_tolerance_degrees = scene.neox_animation_rotation_tolerance_degrees
+
 def _draw_export_neox_mesh(layout, scene, context, folder_box):
     layout.prop(context.scene, "flip_uv_y", text="Flip UV (Y axis)")
     layout.operator("idvmi_neox.neox_exporter", icon="EXPORT")
@@ -166,6 +196,7 @@ def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
 neox_dispatch = {    
     'OPT_Import_Neox_Mesh': _draw_import_neox_mesh,    
     'OPT_Import_Neox_Animation': _draw_import_neox_animation,
+    'OPT_Export_Neox_Animation': _draw_export_neox_animation,
     'OPT_NeoX_Mod_Exporter': _draw_export_neox_mod,
     'OPT_Export_Neox_Mesh': _draw_export_neox_mesh,
     'OPT_Socket_Operations': _draw_socket_operations,

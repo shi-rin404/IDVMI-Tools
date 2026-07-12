@@ -1,6 +1,37 @@
 import bpy
 from ..neox_tools.utils.game_dir_detector import check_game_directory
 
+CPD_ANIMATION_LOOP_PROPERTY = "NeoX:CPDAnimation:loop"
+LOOP_VALUE_KEY = "_idvmi_neox_animation_export_loop_value"
+LOOP_SOURCE_KEY = "_idvmi_neox_animation_export_loop_source"
+
+
+def _active_armature_loop_source():
+    obj = bpy.context.object
+    if obj is not None and obj.type == "ARMATURE":
+        return obj
+    return None
+
+
+def get_neox_animation_export_loop(scene):
+    obj = _active_armature_loop_source()
+    source_name = obj.name if obj is not None else ""
+
+    if scene.get(LOOP_SOURCE_KEY, None) == source_name and LOOP_VALUE_KEY in scene:
+        return bool(scene[LOOP_VALUE_KEY])
+
+    if obj is not None:
+        return bool(obj.get(CPD_ANIMATION_LOOP_PROPERTY, False))
+
+    return False
+
+
+def set_neox_animation_export_loop(scene, value):
+    obj = _active_armature_loop_source()
+    scene[LOOP_SOURCE_KEY] = obj.name if obj is not None else ""
+    scene[LOOP_VALUE_KEY] = bool(value)
+
+
 def register_props():
     bpy.types.Scene.socket_source_gim_selector = bpy.props.StringProperty(
         name="Source Gim File Selector",
@@ -118,12 +149,80 @@ def register_props():
         default=""
     )
 
+    bpy.types.Scene.neox_animation_export_selector = bpy.props.StringProperty(
+        name="NeoX Animation Export Selector",
+        description="Select a .cpdanimation export path",
+        subtype='FILE_PATH',
+        default=""
+    )
+
+    bpy.types.Scene.neox_animation_skeleton_preset = bpy.props.EnumProperty(
+        name="Skeleton",
+        description="Select the skeleton path written into the animation file",
+        items=[
+            ('woman', "Woman", "chr/player/dm65_survivor_w/dm65_survivor_w.skeleton"),
+            ('male', "Male", "chr/player/dm65_survivor_m/h55_survivor_m_zbs/h55_survivor_m_zbs.animconfig"),
+            ('custom', "Custom", "Use custom path"),
+        ],
+        default='woman'
+    )
+
+    bpy.types.Scene.neox_animation_custom_skeleton_path = bpy.props.StringProperty(
+        name="Custom Skeleton Path",
+        description="Absolute path, or a relative path under the game's Documents/res folder",
+        default=""
+    )
+
+    bpy.types.Scene.neox_animation_export_loop = bpy.props.BoolProperty(
+        name="Loop",
+        description="Write the animation loop flag",
+        get=get_neox_animation_export_loop,
+        set=set_neox_animation_export_loop
+    )
+
+    bpy.types.Scene.neox_animation_export_fps = bpy.props.IntProperty(
+        name="FPS",
+        description="Output FPS",
+        default=30,
+        min=1,
+        max=1000
+    )
+
+    bpy.types.Scene.neox_animation_export_reduce_keys = bpy.props.BoolProperty(
+        name="Reduce Redundant Keys",
+        description="Remove keys reproduced by interpolation",
+        default=True
+    )
+
+    bpy.types.Scene.neox_animation_position_tolerance = bpy.props.FloatProperty(
+        name="Position Tolerance",
+        default=1.0e-4,
+        min=0.0,
+        precision=6
+    )
+
+    bpy.types.Scene.neox_animation_scale_tolerance = bpy.props.FloatProperty(
+        name="Scale Tolerance",
+        default=1.0e-4,
+        min=0.0,
+        precision=6
+    )
+
+    bpy.types.Scene.neox_animation_rotation_tolerance_degrees = bpy.props.FloatProperty(
+        name="Rotation Tolerance",
+        description="Angular key-reduction tolerance in degrees",
+        default=0.05,
+        min=0.0,
+        precision=4
+    )
+
     bpy.types.Scene.neox_action_selector = bpy.props.EnumProperty(
         name="Action Selector",
         description="Select the action you want to do",
         items=[            
             ('OPT_Import_Neox_Mesh', "Import NeoX Mesh", "Imports .mesh file"),            
             ('OPT_Import_Neox_Animation', "Import Animation", "Imports .cpdanimation file"),
+            ('OPT_Export_Neox_Animation', "Export Animation", "Exports .cpdanimation file"),
             ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),  
             ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),     
             ('OPT_Socket_Operations', "Socket Operations", "Socket editor GUI"),     

@@ -649,6 +649,24 @@ def set_action_interpolation_linear(action: bpy.types.Action) -> None:
             keyframe.interpolation = "LINEAR"
 
 
+def store_cpdanimation_header_properties(
+    armature_obj: bpy.types.Object,
+    animation: CPDAnimation,
+) -> None:
+    prefix = "NeoX:CPDAnimation:"
+    header = animation.header
+
+    armature_obj[f"{prefix}checksum"] = animation.checksum.hex()
+    armature_obj[f"{prefix}SkeletonPath"] = animation.skeleton_path
+    armature_obj[f"{prefix}fps"] = header.fps
+    armature_obj[f"{prefix}loop"] = header.loop
+    armature_obj[f"{prefix}has_position_keys"] = header.has_position_keys
+    armature_obj[f"{prefix}has_rotation_keys"] = header.has_rotation_keys
+    armature_obj[f"{prefix}has_scale_keys"] = header.has_scale_keys
+    armature_obj[f"{prefix}pack_prs_flags"] = header.pack_prs_flags
+    armature_obj[f"{prefix}accumulation_flags"] = list(header.accumulation_flags)
+
+
 def import_animation(
     animation_path: str,
     armature_obj: bpy.types.Object,
@@ -783,5 +801,7 @@ def import_animation(
         "[CPD] accumulation_flags ignored: "
         + " ".join(f"0x{value:02X}" for value in animation.header.accumulation_flags)
     )
+
+    store_cpdanimation_header_properties(armature_obj, animation)
 
     return action

@@ -5,6 +5,7 @@ from ..set_textures import set_textures
 from ..export_mod.export_ops import Export3DMigoto
 from ..neox_tools.import_ops import IDVMI_FH_Neox_Mesh, IDVMI_OT_Import_Neox_Mesh
 from ..neox_tools.animation_import_ops import IDVMI_OT_Import_Neox_Animation
+from ..neox_tools.animation_export_ops import IDVMI_OT_Export_Neox_Animation
 from ..neox_tools.export_ops import IDVMI_OT_Export_Neox_Mesh
 from ..addon import ui
 from ..neox_tools.mod_exporter.mod_export_ops import IDVMI_OT_Export_Neox_Mod
@@ -29,6 +30,7 @@ classes = [
            Export3DMigoto,
            IDVMI_OT_Import_Neox_Mesh,
            IDVMI_OT_Import_Neox_Animation,
+           IDVMI_OT_Export_Neox_Animation,
            IDVMI_OT_Export_Neox_Mesh,
            IDVMI_OT_Export_Neox_Mod,
            IDVMI_OT_Import_3DM,
