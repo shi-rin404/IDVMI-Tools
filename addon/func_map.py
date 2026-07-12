@@ -73,6 +73,12 @@ def _draw_import_neox_mesh(layout, scene, context, folder_box):
     op = layout.operator("idvmi_neox.neox_importer", icon="IMPORT")
     op.use_scene_selector = True
 
+def _draw_import_neox_animation(layout, scene, context, folder_box):
+    folder_box.label(text="NeoX Animation")
+    folder_box.prop(scene, "neox_animation_selector", text="")
+    op = layout.operator("idvmi_neox.import_animation", icon="IMPORT")
+    op.use_scene_selector = True
+
 def _draw_export_neox_mesh(layout, scene, context, folder_box):
     layout.prop(context.scene, "flip_uv_y", text="Flip UV (Y axis)")
     layout.operator("idvmi_neox.neox_exporter", icon="EXPORT")
@@ -159,6 +165,7 @@ def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
 # Dispatch map to replace if/elif chain
 neox_dispatch = {    
     'OPT_Import_Neox_Mesh': _draw_import_neox_mesh,    
+    'OPT_Import_Neox_Animation': _draw_import_neox_animation,
     'OPT_NeoX_Mod_Exporter': _draw_export_neox_mod,
     'OPT_Export_Neox_Mesh': _draw_export_neox_mesh,
     'OPT_Socket_Operations': _draw_socket_operations,

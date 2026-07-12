@@ -17,6 +17,7 @@ def unregister_props():
         lambda: delattr(bpy.types.Scene, "neox_rig_selector"),
         lambda: delattr(bpy.types.Scene, "flip_uv_y"),
         lambda: delattr(bpy.types.Scene, "neox_mesh_selector"),
+        lambda: delattr(bpy.types.Scene, "neox_animation_selector"),
         lambda: delattr(bpy.types.Scene, "frame_dump_selector"),
         lambda: delattr(bpy.types.Scene, "migoto_export_selector"),
         lambda: delattr(bpy.types.Scene, "neox_export_selector"),

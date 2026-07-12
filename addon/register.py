@@ -111,11 +111,19 @@ def register_props():
         default=""     # .blend'e göre relatif
     )
 
+    bpy.types.Scene.neox_animation_selector = bpy.props.StringProperty(
+        name="NeoX Animation Selector",
+        description="Select a .cpdanimation file",
+        subtype='FILE_PATH',
+        default=""
+    )
+
     bpy.types.Scene.neox_action_selector = bpy.props.EnumProperty(
         name="Action Selector",
         description="Select the action you want to do",
         items=[            
             ('OPT_Import_Neox_Mesh', "Import NeoX Mesh", "Imports .mesh file"),            
+            ('OPT_Import_Neox_Animation', "Import Animation", "Imports .cpdanimation file"),
             ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),  
             ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),     
             ('OPT_Socket_Operations', "Socket Operations", "Socket editor GUI"),     
