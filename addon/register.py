@@ -153,7 +153,7 @@ def register_props():
         name="NeoX Animation Export Selector",
         description="Select a .cpdanimation export path",
         subtype='FILE_PATH',
-        default=""
+        default=check_game_directory()
     )
 
     bpy.types.Scene.neox_animation_skeleton_preset = bpy.props.EnumProperty(

@@ -1420,18 +1420,39 @@ def export_cpdanimation(
 # -----------------------------------------------------------------------------
 
 
-def find_game_res_directory() -> str:
-    for drive_ord in range(ord("A"), ord("Z") + 1):
-        game_dir = os.path.join(
-            f"{chr(drive_ord)}:\\",
-            "Loading Bay Games",
-            "Identity V",
-        )
-        if os.path.isdir(game_dir):
-            return os.path.join(game_dir, "Documents", "res")
+def find_export_res_directory(output_filepath: str) -> str:
+    output_directory = os.path.abspath(os.path.dirname(output_filepath))
+    marker = os.path.normcase(os.path.join("Documents", "res"))
+    normalized_output = os.path.normcase(os.path.normpath(output_directory))
+
+    parts = []
+    current = os.path.normpath(output_directory)
+    while True:
+        parent, name = os.path.split(current)
+        if name:
+            parts.append(name)
+            current = parent
+            continue
+        if parent:
+            parts.append(parent)
+        break
+
+    parts.reverse()
+    for index in range(len(parts) - 1):
+        pair = os.path.normcase(os.path.join(parts[index], parts[index + 1]))
+        if pair != marker:
+            continue
+
+        res_dir = os.path.join(*parts[: index + 2])
+        normalized_res_dir = os.path.normcase(os.path.normpath(res_dir))
+        if (
+            normalized_output == normalized_res_dir
+            or normalized_output.startswith(normalized_res_dir + os.sep)
+        ):
+            return res_dir
 
     raise CPDExportError(
-        r'Could not find game directory "[A-Z]:\Loading Bay Games\Identity V".'
+        "Export folder must be inside the game's Documents/res folder."
     )
 
 
@@ -1451,6 +1472,7 @@ def relative_path_from_output(target_absolute_path: str, output_filepath: str) -
 def resolve_custom_skeleton_path(
     custom_path: str,
     output_filepath: str,
+    game_res_dir: str,
 ) -> str:
     custom_path = custom_path.strip()
     if not custom_path:
@@ -1459,7 +1481,6 @@ def resolve_custom_skeleton_path(
     if os.path.isabs(custom_path):
         return relative_path_from_output(custom_path, output_filepath)
 
-    game_res_dir = find_game_res_directory()
     target_absolute_path = os.path.abspath(os.path.join(game_res_dir, custom_path))
     if os.path.commonpath([game_res_dir, target_absolute_path]) != game_res_dir:
         raise CPDExportError(
@@ -1486,11 +1507,16 @@ def resolve_export_skeleton_path(
     output_filepath: str,
     armature_obj: bpy.types.Object,
 ) -> str:
+    game_res_dir = find_export_res_directory(output_filepath)
+
     if skeleton_preset == "custom":
-        return resolve_custom_skeleton_path(custom_skeleton_path, output_filepath)
+        return resolve_custom_skeleton_path(
+            custom_skeleton_path,
+            output_filepath,
+            game_res_dir,
+        )
 
     if skeleton_preset in SKELETON_PRESET_PATHS:
-        game_res_dir = find_game_res_directory()
         target_absolute_path = os.path.join(
             game_res_dir,
             *SKELETON_PRESET_PATHS[skeleton_preset].split("/"),
