@@ -1,11 +1,20 @@
 from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
 import bpy
 import os
+import statistics
+import struct
 from mathutils import Matrix, Vector
 from math import isfinite
 from bpy.props import BoolProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper, axis_conversion
 from math import pi
+
+NEOX_TO_BLENDER_BONE_AXES = Matrix((
+    (0.0, 1.0, 0.0, 0.0),
+    (-1.0, 0.0, 0.0, 0.0),
+    (0.0, 0.0, 1.0, 0.0),
+    (0.0, 0.0, 0.0, 1.0),
+))
 
 class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
     bl_idname = "idvmi_neox.neox_importer"
@@ -69,7 +78,7 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
                         check_weights(model['vertex_weight'], self)
                     break
                 except Exception as e:
-                    self.report({'ERROR'}, f"[{type(e).__name__}] {e}")                    
+                    self.report({'ERROR'}, f"[{type(e).__name__}] {e}")
                     model = {}
                     continue
 
@@ -77,11 +86,11 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
         if model == {}:
             self.report({'ERROR'}, "Model can't be decoded")
             return {'CANCELLED'}
-            
+
 
         obj_name = os.path.basename(mesh_path).rsplit(".", 1)[0]
-        if import_per_material(model, obj_name, self):        
-            self.report({'INFO'}, f"Import OK → {mesh_path}")
+        if import_per_material(model, obj_name, self):
+            self.report({'INFO'}, f"Import OK -> {mesh_path}")
             return {'FINISHED'}
         else:
             return {'CANCELLED'}
@@ -115,10 +124,187 @@ def check_weights(weight_data, operator):
     for weights in weight_data:
         for weight in weights:
             if type(weight) != float or weight > 1.0 or weight < 0.0:
-                operator.report({'ERROR'}, f"Incorrect weights. Example weight: {weight}")            
+                operator.report({'ERROR'}, f"Incorrect weights. Example weight: {weight}")
                 return False
     return True
-        
+
+def source_row_matrix_to_blender_global(matrix_4, game_to_blender: Matrix) -> Matrix:
+    rows = matrix_4.tolist() if hasattr(matrix_4, "tolist") else matrix_4
+    source_global = Matrix(rows).transposed()
+    return game_to_blender @ source_global
+
+def make_edit_bone_rest_matrix(converted_global: Matrix) -> tuple[Matrix, Vector]:
+    location, rotation, scale = converted_global.decompose()
+    rotation.normalize()
+
+    rigid_global = Matrix.Translation(location) @ rotation.to_matrix().to_4x4()
+    edit_bone_matrix = rigid_global @ NEOX_TO_BLENDER_BONE_AXES
+    return edit_bone_matrix, Vector(scale)
+
+def build_local_rest_matrices(global_matrices: list[Matrix], parent_indices: list[int]) -> list[Matrix]:
+    local_matrices = []
+
+    for bone_index, global_matrix in enumerate(global_matrices):
+        parent_index = parent_indices[bone_index]
+
+        if parent_index in (-1, 65535):
+            local_matrix = global_matrix.copy()
+        else:
+            parent_global = global_matrices[parent_index]
+            local_matrix = parent_global.inverted_safe() @ global_matrix
+
+        local_matrices.append(local_matrix)
+
+    return local_matrices
+
+def build_children_by_parent(parent_indices: list[int]) -> dict[int, list[int]]:
+    children = {}
+
+    for child_index, parent_index in enumerate(parent_indices):
+        if parent_index in (-1, 65535):
+            continue
+        children.setdefault(parent_index, []).append(child_index)
+
+    return children
+
+def calculate_projected_bone_length(
+    bone_index: int,
+    edit_bone_matrices: list[Matrix],
+    children_by_parent: dict[int, list[int]],
+    minimum_length: float = 0.01,
+    minimum_alignment: float = 0.80,
+) -> float | None:
+    matrix = edit_bone_matrices[bone_index]
+    head = matrix.to_translation()
+    direction = matrix.to_3x3() @ Vector((0.0, 1.0, 0.0))
+
+    if direction.length < 1.0e-8:
+        return None
+
+    direction.normalize()
+    candidates = []
+
+    for child_index in children_by_parent.get(bone_index, []):
+        child_head = edit_bone_matrices[child_index].to_translation()
+        offset = child_head - head
+
+        if offset.length < 1.0e-8:
+            continue
+
+        normalized_offset = offset.normalized()
+        signed_alignment = normalized_offset.dot(direction)
+        positive_projection = offset.dot(direction)
+
+        candidates.append((signed_alignment, positive_projection, offset.length))
+
+    positive_candidates = [
+        item
+        for item in candidates
+        if item[0] >= minimum_alignment and item[1] >= minimum_length
+    ]
+
+    if not positive_candidates:
+        return None
+
+    _alignment, projected_length, _distance = max(
+        positive_candidates,
+        key=lambda item: item[0],
+    )
+    return projected_length
+
+def is_unit_scale(scale: Vector, epsilon: float = 1.0e-5) -> bool:
+    return (
+        abs(scale.x - 1.0) <= epsilon
+        and abs(scale.y - 1.0) <= epsilon
+        and abs(scale.z - 1.0) <= epsilon
+    )
+
+def trs_reconstruction_error(matrix: Matrix) -> float:
+    location, rotation, scale = matrix.decompose()
+    rotation.normalize()
+
+    reconstructed = (
+        Matrix.Translation(location)
+        @ rotation.to_matrix().to_4x4()
+        @ Matrix.Diagonal((scale.x, scale.y, scale.z, 1.0))
+    )
+
+    return max(
+        abs(matrix[row][column] - reconstructed[row][column])
+        for row in range(4)
+        for column in range(4)
+    )
+
+def decode_bone_bounding_info(value) -> tuple[float, float, float, float, float, float, float]:
+    if isinstance(value, dict):
+        center = value.get("center")
+        if center is None:
+            raise ValueError("Missing 'center' field.")
+
+        center_values = list(center)
+        if len(center_values) != 3:
+            raise ValueError(
+                f"Expected 'center' to contain 3 float values, got {len(center_values)}."
+            )
+
+        missing_fields = [
+            field_name
+            for field_name in (
+                "half_length_x",
+                "radius_y",
+                "radius_z",
+                "bound_radius",
+            )
+            if field_name not in value
+        ]
+        if missing_fields:
+            raise ValueError(
+                "Missing field(s): " + ", ".join(missing_fields)
+            )
+
+        return (
+            float(center_values[0]),
+            float(center_values[1]),
+            float(center_values[2]),
+            float(value["half_length_x"]),
+            float(value["radius_y"]),
+            float(value["radius_z"]),
+            float(value["bound_radius"]),
+        )
+
+    if isinstance(value, (bytes, bytearray)):
+        raw = bytes(value)
+    else:
+        values = list(value)
+        if len(values) == 28:
+            raw = bytes(_ensure_byte(int(item)) for item in values)
+        elif len(values) == 7:
+            return tuple(float(item) for item in values)
+        else:
+            raise ValueError(
+                f"Expected 28 serialized bytes or 7 float values, got {len(values)} values."
+            )
+
+    if len(raw) != 28:
+        raise ValueError(f"Expected 28 serialized BoneBoundingInfo bytes, got {len(raw)}.")
+
+    return struct.unpack("<7f", raw)
+
+def set_bone_collision_properties(pbone, bounding_values) -> None:
+    pbone["NeoX:Bone:CollisionCenter"] = tuple(bounding_values[0:3])
+    pbone["NeoX:Bone:CollisionX"] = float(bounding_values[3])
+    pbone["NeoX:Bone:CollisionY"] = float(bounding_values[4])
+    pbone["NeoX:Bone:CollisionZ"] = float(bounding_values[5])
+    pbone["NeoX:Bone:CollisionBoundRadius"] = float(bounding_values[6])
+
+    if "NeoX:BoundingInfo" in pbone:
+        del pbone["NeoX:BoundingInfo"]
+
+def _ensure_byte(value: int) -> int:
+    if value < 0 or value > 255:
+        raise ValueError(f"Serialized BoneBoundingInfo byte out of range: {value}")
+    return value
+
 def import_per_material(model, obj_name: str, operator):
     root = os.path.dirname(__file__)
     log_file = os.path.join(root, "import_per_material_log.txt")
@@ -127,7 +313,7 @@ def import_per_material(model, obj_name: str, operator):
         log.write(f"--- Starting import for {obj_name} ---\n"); log.flush()
 
         # --- Dummy root fix ---
-        if 'bone_name' in model:            
+        if 'bone_name' in model:
             if 'dummy_root' in model['bone_name']:
                 log.write("Found 'dummy_root', cleaning up model data...\n"); log.flush()
 
@@ -136,10 +322,10 @@ def import_per_material(model, obj_name: str, operator):
                 # Remove dummy root from core lists
                 model['bone_name'].pop(dummy_root_index)
                 model['bone_matrix'].pop(dummy_root_index)
-                
+
                 old_bone_parents = model['bone_parent']
                 new_bone_parents = []
-                
+
                 # Repath parent indices, excluding the dummy root's own parent entry
                 for i, parent_idx in enumerate(old_bone_parents):
                     if i == dummy_root_index:
@@ -147,12 +333,12 @@ def import_per_material(model, obj_name: str, operator):
 
                     new_parent_idx = parent_idx
                     if parent_idx == dummy_root_index or parent_idx == 65535:
-                        new_parent_idx = -1 # Was parented to dummy_root, now a 
+                        new_parent_idx = -1 # Was parented to dummy_root, now a
                     elif parent_idx > dummy_root_index:
                         new_parent_idx -= 1 # Parent index shifted down
-                    
+
                     new_bone_parents.append(new_parent_idx)
-            
+
                 model['bone_parent'] = new_bone_parents
 
                 # Update vertex bone indices (joints) since bone indices have shifted
@@ -170,9 +356,9 @@ def import_per_material(model, obj_name: str, operator):
         # --- Axis conversation ---
         log.write("Performing axis conversion...\n"); log.flush()
         M_game_to_blender = axis_conversion(
-            from_forward='Z', from_up='Y',   # game 
+            from_forward='Z', from_up='Y',   # game
             to_forward='-Y',   to_up='Z'      # blender
-        ).to_4x4()    
+        ).to_4x4()
         log.write("Axis conversion done.\n"); log.flush()
 
         # -- Armature --
@@ -191,37 +377,114 @@ def import_per_material(model, obj_name: str, operator):
         if 'bone_name' in model:
             # """ USAGE: bone_index[name] = bone_index """
             bone_index = {bone_name: bone_index for bone_index, bone_name in enumerate(model['bone_name'])}
-            
+
             # """ USAGE: bone_namer[index] = bone_name """
             bone_namer = {bone_index: bone_name for bone_index, bone_name in enumerate(model['bone_name'])}
-            
-            # """ USAGE: parent_names[index] = parent_name """
-            parent_names = [model['bone_name'][n] if n != -1 else None for n in model['bone_parent']]
 
             # -- Bones --
             log.write("Creating bones...\n"); log.flush()
-            def matrix_to_blender(matrix_4):
-                """Convert 4x4 matrix to Blender coordinate system and extract translation"""
-                C = Matrix(matrix_4.tolist()).transposed()
-                return (M_game_to_blender @ C).to_translation()
 
-            def find_child(bone_name: str):
-                """Find first child of a bone"""
-                try:
-                    return parent_names.index(bone_name)
-                except ValueError:
-                    return None
+            bone_count = len(model['bone_name'])
+            if len(model['bone_matrix']) != bone_count:
+                operator.report(
+                    {'ERROR'},
+                    f"Bone matrix count mismatch: {len(model['bone_matrix'])} vs {bone_count}"
+                )
+                return False
 
-            def find_parent(bone_name: str):
-                """Find parent name of a bone"""
-                if bone_name in bone_index:
-                    return parent_names[bone_index[bone_name]]
-                return None
+            if len(model['bone_parent']) != bone_count:
+                operator.report(
+                    {'ERROR'},
+                    f"Bone parent count mismatch: {len(model['bone_parent'])} vs {bone_count}"
+                )
+                return False
+
+            for idx, parent_index in enumerate(model['bone_parent']):
+                if parent_index in (-1, 65535):
+                    continue
+                if parent_index < 0 or parent_index >= bone_count:
+                    operator.report(
+                        {'ERROR'},
+                        f"Parent index {parent_index} for bone {idx} is out of range."
+                    )
+                    return False
+
+            converted_global_matrices = []
+            edit_bone_matrices = []
+            global_rest_scales = []
+
+            for raw_matrix in model['bone_matrix']:
+                converted_global = source_row_matrix_to_blender_global(
+                    raw_matrix,
+                    M_game_to_blender,
+                )
+                edit_matrix, global_scale = make_edit_bone_rest_matrix(
+                    converted_global
+                )
+                converted_global_matrices.append(converted_global)
+                edit_bone_matrices.append(edit_matrix)
+                global_rest_scales.append(global_scale)
+
+            local_rest_matrices = build_local_rest_matrices(
+                converted_global_matrices,
+                model['bone_parent'],
+            )
+            local_rest_scales = []
+            for local_matrix in local_rest_matrices:
+                _location, _rotation, local_scale = local_matrix.decompose()
+                local_rest_scales.append(Vector(local_scale))
+
+            non_unit_scale_count = 0
+            negative_determinant_count = 0
+            reconstruction_warning_count = 0
+            for idx, bone_name in enumerate(model['bone_name']):
+                local_scale = local_rest_scales[idx]
+                if not is_unit_scale(local_scale):
+                    non_unit_scale_count += 1
+                    log.write(
+                        "WARNING: "
+                        f"Bone '{bone_name}' has non-unit local rest scale "
+                        f"{tuple(local_scale)}. Blender EditBone cannot represent "
+                        "arbitrary three-axis rest scale; value was preserved as "
+                        "custom property.\n"
+                    ); log.flush()
+
+                determinant = converted_global_matrices[idx].to_3x3().determinant()
+                if determinant < 0.0:
+                    negative_determinant_count += 1
+                    log.write(
+                        f"WARNING: Bone '{bone_name}' has negative determinant "
+                        f"{determinant:.8g}; reflection or negative scale cannot be "
+                        "represented exactly by EditBone rotation.\n"
+                    ); log.flush()
+
+                reconstruction_error = trs_reconstruction_error(
+                    converted_global_matrices[idx]
+                )
+                if reconstruction_error > 1.0e-5:
+                    reconstruction_warning_count += 1
+                    log.write(
+                        f"WARNING: Bone '{bone_name}' may contain shear or unsupported "
+                        f"affine transform; reconstruction error={reconstruction_error:.8g}\n"
+                    ); log.flush()
+
+            children_by_parent = build_children_by_parent(model['bone_parent'])
+            resolved_lengths = {}
+            for idx in range(bone_count):
+                length = calculate_projected_bone_length(
+                    idx,
+                    edit_bone_matrices,
+                    children_by_parent,
+                )
+                if length is not None:
+                    resolved_lengths[idx] = length
+
+            median_length = statistics.median(resolved_lengths.values()) if resolved_lengths else 0.1
 
             bpy.ops.object.mode_set(mode='EDIT')
 
-            # Create all bones first (heads only)
-            log.write("Setting bone heads...\n"); log.flush()
+            # Create all bones from full rest matrices first.
+            log.write("Setting bone rest matrices...\n"); log.flush()
             for idx, bone_name in enumerate(model['bone_name']):
                 log.write(f"  Processing bone {idx}: '{bone_name}'\n"); log.flush()
 
@@ -233,7 +496,7 @@ def import_per_material(model, obj_name: str, operator):
                 try:
                     # Create the bone
                     bone = armature_obj.data.edit_bones.new(bone_name)
-                    
+
                     # VERIFY: Check if Blender renamed the bone, which indicates a duplicate.
                     # This is the most reliable way to detect duplicates.
                     if bone.name != bone_name:
@@ -244,62 +507,69 @@ def import_per_material(model, obj_name: str, operator):
                         operator.report({'ERROR'}, f"Duplicate bone name found: '{bone_name}'")
                         return False
 
-                    # Set bone position
-                    matrix_4 = model['bone_matrix'][idx]
-                    bone.head = matrix_to_blender(matrix_4)
-
-                    # Set temporary tail (will be corrected later)
-                    bone.tail = bone.head + Vector((0, 0, 0.1))
+                    bone.matrix = edit_bone_matrices[idx]
+                    bone.length = 0.1
                 except Exception as e:
                     log.write(f"  !! FAILED to create bone '{bone_name}': {e}\n"); log.flush()
                     operator.report({'ERROR'}, f"[{type(e).__name__}] {e}")
                     import traceback
                     traceback.print_exc(file=log)
-                    return False               
+                    return False
 
-            log.write("Bone heads set.\n"); log.flush()
+            log.write("Bone rest matrices set.\n"); log.flush()
 
-            # Set bone hierarchy and tails
-            log.write("Setting bone hierarchy and tails...\n"); log.flush()
-            for bone_name in model['bone_name']:
+            # Set bone hierarchy without connecting heads to parent tails.
+            log.write("Setting bone hierarchy and lengths...\n"); log.flush()
+            for idx, bone_name in enumerate(model['bone_name']):
                 if bone_name not in armature_obj.data.edit_bones:
                     log.write(f"  Skipping hierarchy for '{bone_name}' as it was not created.\n"); log.flush()
                     continue
 
-                edit_bone = armature_obj.data.edit_bones[bone_name]        
+                edit_bone = armature_obj.data.edit_bones[bone_name]
 
-                # Set parent (be explicit so index 0 isn't treated as falsy)
-                parent_name = find_parent(bone_name)
-                if parent_name is not None:
-                    if parent_name in armature_obj.data.edit_bones:
-                        edit_bone.parent = armature_obj.data.edit_bones[parent_name]
-                    else:
+                parent_index = model['bone_parent'][idx]
+                if parent_index not in (-1, 65535):
+                    parent_name = model['bone_name'][parent_index]
+                    if parent_name not in armature_obj.data.edit_bones:
                         log.write(f"  !! Parent bone '{parent_name}' for bone '{bone_name}' not found in armature. Skipping parenting.\n"); log.flush()
                         operator.report({'ERROR'}, f"Parent bone '{parent_name}' not found in armature.")
                         return False
-                # else:            // Commented out because of weird C-level crashes
-                #     bpy.ops.object.mode_set(mode='OBJECT')
-                #     bpy.context.view_layer.update()
-                #     bpy.ops.object.mode_set(mode='EDIT')
+                    edit_bone.parent = armature_obj.data.edit_bones[parent_name]
+                    edit_bone.use_connect = False
 
-                # Set tail to first child's head, or offset from head if no child
-                child_index = find_child(bone_name)
-                if child_index is not None and child_index < len(model['bone_name']):
-                    child_name = bone_namer[child_index]
-                    if child_name in armature_obj.data.edit_bones:
-                        edit_bone.tail = armature_obj.data.edit_bones[child_name].head
+                edit_bone.matrix = edit_bone_matrices[idx]
+
+                if idx in resolved_lengths:
+                    length = resolved_lengths[idx]
                 else:
-                    # No child found, set tail to offset from head
-                    edit_bone.tail = edit_bone.head + Vector((0, 0, 0.1))
+                    parent_index = model['bone_parent'][idx]
+                    if parent_index not in (-1, 65535) and parent_index in resolved_lengths:
+                        length = max(resolved_lengths[parent_index] * 0.35, 0.01)
+                    else:
+                        length = max(median_length * 0.25, 0.01)
 
-                # Blender silently deletes zero-length bones when leaving edit mode.
-                # Guard against that by enforcing a minimum length.
-                if (edit_bone.tail - edit_bone.head).length < 1e-5:
-                    fallback_offset = Vector((0.0, 0.05, 0.0))
-                    edit_bone.tail = edit_bone.head + fallback_offset
-                    log.write(f"  Adjusted tail for '{bone_name}' to avoid zero-length (added {fallback_offset}).\n"); log.flush()
+                edit_bone.length = length
 
-            log.write("Bone hierarchy and tails set.\n"); log.flush()
+            if resolved_lengths:
+                min_length = min(resolved_lengths.values())
+                max_length = max(resolved_lengths.values())
+            else:
+                min_length = median_length
+                max_length = median_length
+
+            log.write(
+                "Bone rest summary: "
+                f"count={bone_count}, "
+                f"projected_lengths={len(resolved_lengths)}, "
+                f"min_length={min_length:.8g}, "
+                f"max_length={max_length:.8g}, "
+                f"median_length={median_length:.8g}, "
+                f"non_unit_local_scale={non_unit_scale_count}, "
+                f"negative_determinant={negative_determinant_count}, "
+                f"reconstruction_warnings={reconstruction_warning_count}\n"
+            ); log.flush()
+
+            log.write("Bone hierarchy and lengths set.\n"); log.flush()
 
             # --- Finalize Armature and Switch to Object Mode ---
             log.write("Switching to OBJECT mode and updating depsgraph...\n"); log.flush()
@@ -307,8 +577,22 @@ def import_per_material(model, obj_name: str, operator):
                 bpy.ops.object.mode_set(mode='OBJECT')
                 bpy.context.view_layer.update() # Force update after hierarchy changes
                 log.write("...done.\n"); log.flush()
-            except Exception:
+            except Exception as e:
                 operator.report({'ERROR'}, f"Error while switching to OBJECT mode: {e}")
+                return False
+
+            log.write("Setting rest scale custom properties on bones...\n"); log.flush()
+            try:
+                for idx, bone_name in enumerate(model['bone_name']):
+                    bone_data = armature_obj.data.bones[bone_name]
+                    bone_data["NeoX:RestScale"] = tuple(local_rest_scales[idx])
+                    bone_data["NeoX:GlobalRestScale"] = tuple(global_rest_scales[idx])
+                log.write("Rest scale custom properties set.\n"); log.flush()
+            except Exception as e:
+                log.write(f"CRITICAL PYTHON ERROR while setting rest scale properties: {e}\n"); log.flush()
+                import traceback
+                traceback.print_exc(file=log)
+                operator.report({'ERROR'}, f"Error while setting rest scale properties: {e}")
                 return False
 
             # Custom Properties - CRASH ANALYZER BLOCK
@@ -319,21 +603,68 @@ def import_per_material(model, obj_name: str, operator):
                 bpy.ops.object.mode_set(mode='POSE')
                 log.write("...switched to POSE mode successfully.\n"); log.flush()
 
-                bounding_info = model.get('bounding_info')
+                bounding_info = model.get("bounding_info")
 
                 if bounding_info is None:
-                    log.write("WARNING: 'bounding_info' not found in model data. Skipping pose bone properties.\n"); log.flush()
+                    log.write(
+                        "WARNING: 'bounding_info' not found in model data. "
+                        "Skipping pose bone properties.\n"
+                    )
+                    log.flush()
                 else:
-                    log.write(f"Found 'bounding_info' with {len(bounding_info)} entries. Armature has {len(armature_obj.pose.bones)} pose bones.\n"); log.flush()
-            
-                    for n, pbone in enumerate(armature_obj.pose.bones):
-                        if n < len(bounding_info):
-                            info_to_assign = bounding_info[n]
-                            # log.write(f"  Processing pose bone {n} ('{pbone.name}'): Assigning {str(info_to_assign)}\n"); log.flush()
-                            pbone["NeoX:BoundingInfo"] = info_to_assign
-                        else:
-                            log.write(f"  WARNING: Not enough bounding_info entries for bone {n}.\n"); log.flush()
-                            break
+                    bone_names = model["bone_name"]
+
+                    if len(bounding_info) != len(bone_names):
+                        operator.report(
+                            {"ERROR"},
+                            (
+                                "BoundingInfo count mismatch: "
+                                f"{len(bounding_info)} records for "
+                                f"{len(bone_names)} bones."
+                            ),
+                        )
+                        return False
+
+                    log.write(
+                        f"Assigning {len(bounding_info)} BoundingInfo records "
+                        "using source bone names.\n"
+                    )
+                    log.flush()
+
+                    for source_index, bone_name in enumerate(bone_names):
+                        pbone = armature_obj.pose.bones.get(bone_name)
+
+                        if pbone is None:
+                            log.write(
+                                f"ERROR: Pose bone '{bone_name}' was not found "
+                                f"for source index {source_index}.\n"
+                            )
+                            log.flush()
+
+                            operator.report(
+                                {"ERROR"},
+                                f"Pose bone not found: {bone_name}",
+                            )
+                            return False
+
+                        try:
+                            bounding_values = decode_bone_bounding_info(
+                                bounding_info[source_index]
+                            )
+                        except ValueError as e:
+                            log.write(
+                                f"ERROR: BoundingInfo[{source_index}] for "
+                                f"'{bone_name}' is invalid: {e}\n"
+                            )
+                            log.flush()
+
+                            operator.report(
+                                {"ERROR"},
+                                f"Invalid BoundingInfo for '{bone_name}': {e}",
+                            )
+                            return False
+
+                        set_bone_collision_properties(pbone, bounding_values)
 
                 log.write("Final switch back to OBJECT mode...\n"); log.flush()
                 bpy.ops.object.mode_set(mode='OBJECT')
@@ -350,23 +681,30 @@ def import_per_material(model, obj_name: str, operator):
                 bpy.ops.object.mode_set(mode='OBJECT')
                 operator.report({'ERROR'}, f"Error while setting pose bone properties: {e}")
                 return False
-       
+
             # Set armature custom properties
             log.write("Setting custom properties on armature...\n"); log.flush()
             armature_obj['NeoX:BoneOrder'] = model['bone_name']
             armature_obj['NeoX:BoundingInfo'] = True
             armature_obj['Neox:BoneMatrix'] = model['bone_matrix']
-            
+
             armature_obj['NeoX:BoneTail'] = model['bone_tail']
+            if 'bone_weight_usage' in model:
+                armature_obj['NeoX:BoneWeightUsageBitCount'] = (
+                    model['bone_weight_usage']['bit_count']
+                )
+                armature_obj['NeoX:BoneWeightUsageFlags'] = list(
+                    model['bone_weight_usage']['flags']
+                )
             armature_obj['NeoX:LODTable'] = model['lod_data_table']
-            log.write("Custom properties set.\n"); log.flush()            
-            
+            log.write("Custom properties set.\n"); log.flush()
+
             # Validate armature
             if len(model['bone_name']) != len(armature_data.bones):
                 log.write("!!! Bone count mismatch after creation. Aborting. !!!\n"); log.flush()
                 log.write(f"Expected {len(model['bone_name'])} bones based on source file, but Blender created {len(armature_data.bones)} bones.\n"); log.flush()
                 operator.report({'ERROR'}, f"Expected {len(model['bone_name'])} bones based on source file, but Blender created {len(armature_data.bones)} bones."); log.flush()
-                
+
                 model_bones = set(model['bone_name'])
                 armature_bones = {bone.name for bone in armature_data.bones}
 
@@ -397,7 +735,7 @@ def import_per_material(model, obj_name: str, operator):
         log.write("Processing meshes...\n"); log.flush()
         current_vertex_index = 0
         current_face_index = 0
-        
+
         for mesh_index, mesh_info in enumerate(model['mesh']):
             log.write(f"  Processing mesh {mesh_index}...\n"); log.flush()
             mesh_vertex_count, mesh_face_count, uv_ch_count, has_color = mesh_info
@@ -405,17 +743,17 @@ def import_per_material(model, obj_name: str, operator):
             mesh_data = bpy.data.meshes.new(f"{obj_name}_{mesh_index}")
             mesh_obj = bpy.data.objects.new(f"{obj_name}_{mesh_index}", mesh_data)
             bpy.context.collection.objects.link(mesh_obj)
-        
+
             # Position & Normal - FIX: Convert tuples to Vector properly
             log.write(f"    Processing {mesh_vertex_count} vertices and normals...\n"); log.flush()
             vertices = []
             normals = []
-            
+
             for vertex_index in range(current_vertex_index, current_vertex_index + mesh_vertex_count):
                 # Convert position and normal to Vectors, then apply transformation
                 pos_vector = Vector(model['position'][vertex_index])
                 norm_vector = Vector(model['normal'][vertex_index])
-                
+
                 vertices.append((_3D_Matrix @ pos_vector)[:])  # Convert back to tuple
                 normals.append((_3D_Matrix @ norm_vector)[:])   # Convert back to tuple
             log.write(f"    ...done.\n"); log.flush()
@@ -458,7 +796,7 @@ def import_per_material(model, obj_name: str, operator):
 
             # Safety check + exception handling to avoid C-level crash
             try:
-                # Build sanitized list of mathutils.Vector normals            
+                # Build sanitized list of mathutils.Vector normals
                 normals_vec = []
                 for n in normals:
                     try:
@@ -505,14 +843,14 @@ def import_per_material(model, obj_name: str, operator):
                     for loop_idx in face.loop_indices:
                         vertex_idx = mesh_data.loops[loop_idx].vertex_index
                         global_vertex_idx = current_vertex_index + vertex_idx
-                        
+
                         if global_vertex_idx < len(model['uv']):
                             # uv_layer[loop_idx].uv = model['uv'][global_vertex_idx]
                             u, v = model['uv'][global_vertex_idx]
                             uv_layer[loop_idx].uv = (u, 1.0 - v)
                 log.write(f"    ...done.\n"); log.flush()
 
-            if 'bone_name' in model:                
+            if 'bone_name' in model:
                 # Create Vertex Groups for all bones
                 log.write(f"    Creating vertex groups...\n"); log.flush()
                 for bone_name in model['bone_name']:
@@ -526,7 +864,7 @@ def import_per_material(model, obj_name: str, operator):
                 # Process only vertices belonging to this mesh
                 mesh_vertex_data = model['vertex_bone'][current_vertex_index:current_vertex_index + mesh_vertex_count]
                 mesh_weight_data = model['vertex_weight'][current_vertex_index:current_vertex_index + mesh_vertex_count]
-                
+
                 for local_vertex_index, (joints, weights) in enumerate(zip(mesh_vertex_data, mesh_weight_data)):
                     """
                     joint => uint16(4)
@@ -536,10 +874,10 @@ def import_per_material(model, obj_name: str, operator):
                         # Skip invalid joints (65535 = -1 as uint16)
                         if joint == 65535 or joint == 255:
                             continue
-                            
+
                         group_name = bone_namer[joint]
-                        
-                        vertex_group = mesh_obj.vertex_groups[group_name]                   
+
+                        vertex_group = mesh_obj.vertex_groups[group_name]
                         vertex_group.add([local_vertex_index], weight, 'ADD')
 
                 current_vertex_index += mesh_vertex_count

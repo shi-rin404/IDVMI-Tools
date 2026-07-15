@@ -19,6 +19,52 @@ def _ensure_uint(value: int, bits: int, label: str) -> int:
         raise ValueError(f"{label} ({value}) must be between 0 and {max_value}")
     return value
 
+def encode_legacy_bounding_info_property(value) -> bytes:
+    values = list(value)
+
+    if len(values) == 28:
+        return bytes(
+            _ensure_uint(int(item), 8, "Serialized bounding info byte")
+            for item in values
+        )
+
+    if len(values) == 7:
+        return struct.pack("<7f", *(float(item) for item in values))
+
+    raise ValueError(
+        "NeoX:BoundingInfo must contain either 28 serialized bytes "
+        f"or 7 float values, got {len(values)} values."
+    )
+
+def encode_bone_collision_properties(pbone) -> bytes:
+    try:
+        center = list(pbone["NeoX:Bone:CollisionCenter"])
+        collision_x = pbone["NeoX:Bone:CollisionX"]
+        collision_y = pbone["NeoX:Bone:CollisionY"]
+        collision_z = pbone["NeoX:Bone:CollisionZ"]
+        bound_radius = pbone["NeoX:Bone:CollisionBoundRadius"]
+    except KeyError:
+        if "NeoX:BoundingInfo" in pbone:
+            return encode_legacy_bounding_info_property(pbone["NeoX:BoundingInfo"])
+        raise
+
+    if len(center) != 3:
+        raise ValueError(
+            "NeoX:Bone:CollisionCenter must contain exactly 3 float values, "
+            f"got {len(center)} values."
+        )
+
+    return struct.pack(
+        "<7f",
+        float(center[0]),
+        float(center[1]),
+        float(center[2]),
+        float(collision_x),
+        float(collision_y),
+        float(collision_z),
+        float(bound_radius),
+    )
+
 class IDVMI_OT_Export_Neox_Mesh(bpy.types.Operator, ExportHelper):
     bl_idname = "idvmi_neox.neox_exporter"
     bl_label = "Export NeoX Mesh"
@@ -76,7 +122,7 @@ class IDVMI_OT_Export_Neox_Mesh(bpy.types.Operator, ExportHelper):
     
 def get_armature(context, operator):
     bpy.ops.object.mode_set(mode='OBJECT')
-    arm_obj = context.active_object    
+    arm_obj = context.active_object
 
     if arm_obj.type != 'ARMATURE':     
         while arm_obj:
@@ -87,8 +133,62 @@ def get_armature(context, operator):
         if not arm_obj:
             operator.report({'ERROR'}, "Please select an armature that has mesh(es)")
             return {'CANCELLED'}
-    
+
     return arm_obj
+
+def collect_weighted_bone_names_from_mesh_data(mesh_data: dict, epsilon: float = 1.0e-8) -> set[str]:
+    bone_names = list(mesh_data['bone_name'])
+    weighted_bone_names = set()
+
+    for mesh_info in mesh_data['mesh']:
+        vertex_joints = mesh_info['vertex_joint']
+        vertex_weights = mesh_info['vertex_joint_weight']
+
+        if len(vertex_joints) != len(vertex_weights):
+            raise ValueError("vertex_joint and vertex_joint_weight length mismatch")
+
+        for joints, weights in zip(vertex_joints, vertex_weights):
+            if len(joints) != len(weights):
+                raise ValueError("Joint and weight component count mismatch")
+
+            for joint_index, weight in zip(joints, weights):
+                if joint_index == 65535:
+                    continue
+
+                if joint_index < 0 or joint_index >= len(bone_names):
+                    raise ValueError(f"Invalid weighted bone index: {joint_index}")
+
+                if weight > epsilon:
+                    weighted_bone_names.add(bone_names[joint_index])
+
+    return weighted_bone_names
+
+def encode_bone_weight_usage_mask(
+    export_bone_order: list[str],
+    weighted_bone_names: set[str],
+) -> bytes:
+    bone_name_to_index = {
+        bone_name: index for index, bone_name in enumerate(export_bone_order)
+    }
+
+    missing_weighted_bones = weighted_bone_names - set(export_bone_order)
+    if missing_weighted_bones:
+        raise ValueError(
+            "Weighted bones are missing from export order: "
+            f"{sorted(missing_weighted_bones)}"
+        )
+
+    bit_count = len(export_bone_order)
+    byte_count = (bit_count + 7) // 8
+    flags = bytearray(byte_count)
+
+    for bone_name in weighted_bone_names:
+        bone_index = bone_name_to_index[bone_name]
+        byte_index = bone_index // 8
+        bit_index = bone_index % 8
+        flags[byte_index] |= 1 << bit_index
+
+    return bit_count.to_bytes(4, "little") + bytes(flags)
 
 def parse_blender_meshes(armature, flip_uv_y, operator, log) -> dict:
     log.write("--- Starting mesh parsing ---\n"); log.flush()
@@ -106,11 +206,10 @@ def parse_blender_meshes(armature, flip_uv_y, operator, log) -> dict:
 
     mesh_data = {}
 
-    
+
     log.write("Reading bone data from armature...\n"); log.flush()
-    mesh_data['bone_tail'] = armature['NeoX:BoneTail']
-    mesh_data['bone_name'] = armature['NeoX:BoneOrder'] 
-    mesh_data['bone_parent'] = []   
+    mesh_data['bone_name'] = armature['NeoX:BoneOrder']
+    mesh_data['bone_parent'] = []
     mesh_data['bone_original_matrix'] = armature['Neox:BoneMatrix']
 
     bone_index = {name: idx for idx, name in enumerate(mesh_data['bone_name'])}
@@ -314,13 +413,27 @@ def export_neox_mesh(export_path:os.PathLike, mesh_data:dict, arm_obj, operator,
                 bpy.context.view_layer.objects.active = arm_obj
                 arm_obj.select_set(True)
                 bpy.ops.object.mode_set(mode='POSE')
-                for pbone in arm_obj.pose.bones:
+                for bone_name in mesh_data['bone_name']:
+                    pbone = arm_obj.pose.bones.get(bone_name)
+                    if pbone is None:
+                        log.write(f"ERROR: Pose bone '{bone_name}' not found for bounding info export.\n"); log.flush()
+                        operator.report({'ERROR'}, f"Pose bone not found: {bone_name}")
+                        return False
+
                     try:
-                        for coordinate in pbone["NeoX:BoundingInfo"]:
-                            file_data += writefloat(coordinate)
-                    except KeyError:
-                        log.write("ERROR: Bounding info mismatch. Adding/Deleting bones isn't supported for now.\n"); log.flush()
-                        operator.report({'ERROR'}, "Adding/Deleting bones isn't supported for now")
+                        file_data += encode_bone_collision_properties(pbone)
+                    except KeyError as e:
+                        log.write(
+                            f"ERROR: Missing collision property {e} on pose bone '{pbone.name}'.\n"
+                        ); log.flush()
+                        operator.report(
+                            {'ERROR'},
+                            f"Missing collision property {e} on pose bone '{pbone.name}'",
+                        )
+                        return False
+                    except ValueError as e:
+                        log.write(f"ERROR: Invalid BoundingInfo for '{pbone.name}': {e}\n"); log.flush()
+                        operator.report({'ERROR'}, f"Invalid BoundingInfo for '{pbone.name}': {e}")
                         return False
                 bpy.ops.object.mode_set(mode='OBJECT')
             log.write("...done.\n"); log.flush()
@@ -413,8 +526,12 @@ def export_neox_mesh(export_path:os.PathLike, mesh_data:dict, arm_obj, operator,
                         file_data += writefloat(weight)
             log.write("...done.\n"); log.flush()
 
-            log.write("Writing footer data (BoneTail, LODTable)...\n"); log.flush()
-            file_data += arm_obj['NeoX:BoneTail']
+            log.write("Writing footer data (BoneWeightUsageMask, LODTable)...\n"); log.flush()
+            weighted_bone_names = collect_weighted_bone_names_from_mesh_data(mesh_data)
+            file_data += encode_bone_weight_usage_mask(
+                list(mesh_data['bone_name']),
+                weighted_bone_names,
+            )
 
             current_offset = _ensure_uint(len(file_data), 32, "Data table offset")
             file_data[table_offset:table_offset+4] = writeuint32(current_offset)

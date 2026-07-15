@@ -17,6 +17,56 @@ def readuint32(f):
 def readfloat(f):
     return struct.unpack('<f', f.read(4))[0]
 
+def read_bone_bounding_info(f) -> dict[str, Any]:
+    raw = f.read(28)
+    if len(raw) != 28:
+        raise EOFError(
+            f"Expected 28 BoneBoundingInfo bytes, received {len(raw)}"
+        )
+
+    values = struct.unpack("<7f", raw)
+    return {
+        "center": values[0:3],
+        "half_length_x": values[3],
+        "radius_y": values[4],
+        "radius_z": values[5],
+        "bound_radius": values[6],
+    }
+
+def read_bone_weight_usage_mask(f, bone_names: list[str]) -> dict[str, Any]:
+    bit_count = readuint32(f)
+    byte_count = (bit_count + 7) // 8
+    flags = f.read(byte_count)
+
+    if len(flags) != byte_count:
+        raise EOFError(
+            f"Expected {byte_count} usage-mask bytes, received {len(flags)}"
+        )
+
+    used_indices = []
+    unused_indices = []
+    usable_count = min(bit_count, len(bone_names))
+
+    for bone_index in range(usable_count):
+        byte_index = bone_index // 8
+        bit_index = bone_index % 8
+        is_used = bool(flags[byte_index] & (1 << bit_index))
+
+        if is_used:
+            used_indices.append(bone_index)
+        else:
+            unused_indices.append(bone_index)
+
+    return {
+        "bit_count": bit_count,
+        "flags": flags,
+        "raw": bit_count.to_bytes(4, "little") + flags,
+        "used_indices": used_indices,
+        "unused_indices": unused_indices,
+        "used_names": [bone_names[index] for index in used_indices],
+        "unused_names": [bone_names[index] for index in unused_indices],
+    }
+
 def parse_mesh_1(model: dict[str, Any], f: BinaryIO , operator) -> dict[str, Any]:
     _magic_number = f.read(8)
 
@@ -54,11 +104,14 @@ def parse_mesh_1(model: dict[str, Any], f: BinaryIO , operator) -> dict[str, Any
             bone_names.append(bone_name)
         model['bone_name'] = bone_names
 
-        bone_binding_info = readuint8(f)        
+        bone_binding_info = readuint8(f)
         if bone_binding_info:
             model['bounding_info'] = []
+            model['bone_bounding_info'] = []
             for _ in range(bone_count):
-                model['bounding_info'].append(tuple(readfloat(f) for _ in range(7)))
+                bounding_info = read_bone_bounding_info(f)
+                model['bone_bounding_info'].append(bounding_info)
+                model['bounding_info'].append(bounding_info)
 
         model['bone_matrix'] = []
         for _ in range(bone_count):
@@ -146,20 +199,23 @@ def parse_mesh_1(model: dict[str, Any], f: BinaryIO , operator) -> dict[str, Any
             vertex_bones = [readuint16(f) for _ in range(4)]
             model['vertex_bone'].append(vertex_bones)
 
-        # with open("C:\\Users\\Shirin\\AppData\\Roaming\\Blender Foundation\\Blender\\3.6\scripts\\addons\\IDVMI_Tools\\neox_tools\\joints.txt", "w") as www:
-        #     www.write(f"{model['vertex_bone']}")
-
         model['vertex_weight'] = []
         for _ in range(vertex_count):
             vertex_weights = [readfloat(f) for _ in range(4)]
             model['vertex_weight'].append(vertex_weights)        
 
-        # with open("C:\\Users\\Shirin\\AppData\\Roaming\\Blender Foundation\\Blender\\3.6\scripts\\addons\\IDVMI_Tools\\neox_tools\\weights.txt", "w") as www:
-        #     www.write(f"{model['vertex_weight']}")
-
-    # footer
-    bone_tail_size = table_offset - f.tell()
-    model['bone_tail'] = f.read(bone_tail_size)
+    # footer: BoneWeightUsageMask
+    if model['bone_exist']:
+        model['bone_weight_usage'] = read_bone_weight_usage_mask(f, model['bone_name'])
+        if f.tell() != table_offset:
+            raise ValueError(
+                "Bone usage mask does not end at table_offset: "
+                f"current={f.tell()}, table_offset={table_offset}"
+            )
+        model['bone_tail'] = model['bone_weight_usage']['raw']
+    else:
+        bone_tail_size = table_offset - f.tell()
+        model['bone_tail'] = f.read(bone_tail_size)
     
     f.seek(table_offset)
 
@@ -205,8 +261,12 @@ def parse_mesh_2(model, f, operator):
 
         bone_extra_info = readuint8(f)
         if bone_extra_info:
+            model['bounding_info'] = []
+            model['bone_bounding_info'] = []
             for _ in range(bone_count):
-                f.read(28)
+                bounding_info = read_bone_bounding_info(f)
+                model['bone_bounding_info'].append(bounding_info)
+                model['bounding_info'].append(bounding_info)
 
         model['bone_matrix'] = []
         for _ in range(bone_count):
@@ -300,9 +360,18 @@ def parse_mesh_2(model, f, operator):
             vertex_weights = [readfloat(f) for _ in range(4)]
             model['vertex_weight'].append(vertex_weights)
 
-    # footer
-    bone_tail_size = table_offset - f.tell()
-    model['bone_tail'] = f.read(bone_tail_size)
+    # footer: BoneWeightUsageMask
+    if model['bone_exist']:
+        model['bone_weight_usage'] = read_bone_weight_usage_mask(f, model['bone_name'])
+        if f.tell() != table_offset:
+            raise ValueError(
+                "Bone usage mask does not end at table_offset: "
+                f"current={f.tell()}, table_offset={table_offset}"
+            )
+        model['bone_tail'] = model['bone_weight_usage']['raw']
+    else:
+        bone_tail_size = table_offset - f.tell()
+        model['bone_tail'] = f.read(bone_tail_size)
 
     f.seek(table_offset)
 
@@ -348,11 +417,14 @@ def parse_mesh_3(model: dict[str, Any], f: BinaryIO, operator) -> dict[str, Any]
             bone_names.append(bone_name)
         model['bone_name'] = bone_names
 
-        bone_binding_info = readuint8(f)        
+        bone_binding_info = readuint8(f)
         if bone_binding_info:
             model['bounding_info'] = []
-            for _ in range(bone_count):                
-                model['bounding_info'].append(tuple(readfloat(f) for _ in range(7)))
+            model['bone_bounding_info'] = []
+            for _ in range(bone_count):
+                bounding_info = read_bone_bounding_info(f)
+                model['bone_bounding_info'].append(bounding_info)
+                model['bounding_info'].append(bounding_info)
 
         model['bone_matrix'] = []
         for _ in range(bone_count):
@@ -446,9 +518,18 @@ def parse_mesh_3(model: dict[str, Any], f: BinaryIO, operator) -> dict[str, Any]
             vertex_weights = [readfloat(f) for _ in range(4)]
             model['vertex_weight'].append(vertex_weights)
 
-    # footer
-    bone_tail_size = table_offset - f.tell()
-    model['bone_tail'] = f.read(bone_tail_size)
+    # footer: BoneWeightUsageMask
+    if model['bone_exist']:
+        model['bone_weight_usage'] = read_bone_weight_usage_mask(f, model['bone_name'])
+        if f.tell() != table_offset:
+            raise ValueError(
+                "Bone usage mask does not end at table_offset: "
+                f"current={f.tell()}, table_offset={table_offset}"
+            )
+        model['bone_tail'] = model['bone_weight_usage']['raw']
+    else:
+        bone_tail_size = table_offset - f.tell()
+        model['bone_tail'] = f.read(bone_tail_size)
     
     f.seek(table_offset)
 
