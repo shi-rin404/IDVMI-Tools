@@ -8,6 +8,7 @@ def unregister_props():
         lambda: delattr(bpy.types.Scene, "gim_path"),
         lambda: delattr(bpy.types.Scene, "default_socket_name"),         
         lambda: delattr(bpy.types.Scene, "socket_default_gim_selector"),
+        lambda: delattr(bpy.types.Scene, "neox_mod_export_custom_skeleton"),
         lambda: delattr(bpy.types.Scene, "neox_mod_name"),
         lambda: delattr(bpy.types.Scene, "skeleton_path"),  
         lambda: delattr(bpy.types.Scene, "animconfig_location"),  

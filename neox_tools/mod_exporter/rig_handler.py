@@ -1,6 +1,6 @@
 import os, bpy, shutil
 
-def rig_handler(export_path, context):
+def rig_handler(export_path, context, custom_skeleton=False):
     rig_path_lib = {
             'woman': ('chr/player/dm65_survivor_w/dm65_survivor_w.animconfig', 'chr/player/dm65_survivor_w/dm65_survivor_w.skeleton'),
             'male': ('chr/player/dm65_survivor_m/h55_survivor_m_zbs/h55_survivor_m_zbs.animconfig', 'chr/player/dm65_survivor_m/h55_survivor_m_zbs/h55_survivor_m_zbs.skeleton'),
@@ -20,8 +20,11 @@ def rig_handler(export_path, context):
         shutil.copy(animconfig_path, new_animconfig_path)
         animconfig_path = os.path.basename(new_animconfig_path)
 
-    skeleton_path = rig_path_lib[context.scene.neox_rig_selector][1]
-    skeleton_path = os.path.join(rel_path, skeleton_path).replace("\\", "/")
+    if custom_skeleton:
+        skeleton_path = "main.skeleton"
+    else:
+        skeleton_path = rig_path_lib[context.scene.neox_rig_selector][1]
+        skeleton_path = os.path.join(rel_path, skeleton_path).replace("\\", "/")
 
     rig_lib_root_path = os.path.join(os.path.dirname(__file__), "rig_resource")
     gim_path_lib = {

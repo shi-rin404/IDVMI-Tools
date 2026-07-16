@@ -56,6 +56,12 @@ def register_props():
         default=False
     )
 
+    bpy.types.Scene.neox_mod_export_custom_skeleton = bpy.props.BoolProperty(
+        name="Export with Custom Skeleton",
+        description="Generate and bind a custom .skeleton during NeoX mod export",
+        default=False
+    )
+
     bpy.types.Scene.gim_path = bpy.props.StringProperty(
         name="Gim File Path",
         description="Insert the gim path of your character. You can use forward or backward slash.",
@@ -219,13 +225,13 @@ def register_props():
     bpy.types.Scene.neox_action_selector = bpy.props.EnumProperty(
         name="Action Selector",
         description="Select the action you want to do",
-        items=[            
+        items=[
             ('OPT_Import_Neox_Mesh', "Import NeoX Mesh", "Imports .mesh file"),            
             ('OPT_Import_Neox_Animation', "Import Animation", "Imports .cpdanimation file"),
             ('OPT_Export_Neox_Animation', "Export Animation", "Exports .cpdanimation file"),
-            ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),  
-            ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),     
-            ('OPT_Socket_Operations', "Socket Operations", "Socket editor GUI"),     
+            ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),
+            ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),
+            ('OPT_Socket_Operations', "Socket Operations", "Socket editor GUI"),
         ],
         default='OPT_Import_Neox_Mesh'
     )

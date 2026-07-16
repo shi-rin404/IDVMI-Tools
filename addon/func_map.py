@@ -122,6 +122,7 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
 
     mod_options = layout.box()
     mod_options.prop(scene, "neox_rig_selector")
+    use_custom_skeleton = scene.neox_mod_export_custom_skeleton
 
     # Rig
     if context.scene.neox_rig_selector == 'custom':
@@ -130,8 +131,9 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
         rig_selector.label(text="Reference Gim File")
         rig_selector.prop(scene, "gim_selector", text="")    
 
-        rig_selector.label(text="Skeleton Path")
-        rig_selector.prop(context.scene, "skeleton_path", text="")
+        if not use_custom_skeleton:
+            rig_selector.label(text="Skeleton Path")
+            rig_selector.prop(context.scene, "skeleton_path", text="")
 
         rig_selector.label(text="AnimConfig Location")
         rig_selector.prop(context.scene, "animconfig_location", text="")
@@ -155,6 +157,13 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
     mod_name = layout.box()
     mod_name.label(text="Mod Name")
     mod_name.prop(context.scene, "neox_mod_name", text="")
+
+    custom_skeleton_box = layout.box()
+    custom_skeleton_box.prop(
+        scene,
+        "neox_mod_export_custom_skeleton",
+        text="Export with Custom Skeleton",
+    )
 
     layout.operator("idvmi_neox.neox_mod_exporter", icon="EXPORT")
 
