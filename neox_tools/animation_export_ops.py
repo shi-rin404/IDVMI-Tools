@@ -68,7 +68,7 @@ PROPERTY_ACCUMULATION_FLAGS = PROPERTY_PREFIX + "accumulation_flags"
 
 SKELETON_PRESET_PATHS = {
     "woman": "chr/player/dm65_survivor_w/dm65_survivor_w.skeleton",
-    "male": "chr/player/dm65_survivor_m/h55_survivor_m_zbs/h55_survivor_m_zbs.animconfig",
+    "male": "chr/player/dm65_survivor_m/h55_survivor_m_zbs/h55_survivor_m_zbs.skeleton",
 }
 
 SOURCE_FORWARD = "Z"

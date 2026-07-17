@@ -167,7 +167,7 @@ def register_props():
         description="Select the skeleton path written into the animation file",
         items=[
             ('woman', "Woman", "chr/player/dm65_survivor_w/dm65_survivor_w.skeleton"),
-            ('male', "Male", "chr/player/dm65_survivor_m/h55_survivor_m_zbs/h55_survivor_m_zbs.animconfig"),
+            ('male', "Male", "chr/player/dm65_survivor_m/h55_survivor_m_zbs/h55_survivor_m_zbs.skeleton"),
             ('custom', "Custom", "Use custom path"),
         ],
         default='woman'
