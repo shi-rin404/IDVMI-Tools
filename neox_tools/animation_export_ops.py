@@ -8,9 +8,9 @@ Supported format:
 The exporter reads only the active armature's active Action F-curves.
 It intentionally does not bake NLA blending, constraints, or drivers.
 
-Expected armature properties:
-    obj["NeoX:BoneOrder"]
-    obj["Neox:BoneMatrix"]
+Bone order and rest matrices are rebuilt from the current armature using the
+same canonical export algorithm as neox_tools.export_ops. Imported
+NeoX:BoneOrder is used only as an ordering hint when present.
 
 Optional imported-animation properties:
     obj["NeoX:CPDAnimation:checksum"]            # 32-character hex string
@@ -43,6 +43,8 @@ from bpy.props import BoolProperty, FloatProperty, IntProperty, StringProperty
 from bpy_extras.io_utils import axis_conversion
 from mathutils import Euler, Matrix, Quaternion, Vector
 
+from .export_ops import build_bone_matrices, build_export_bone_order
+
 
 # -----------------------------------------------------------------------------
 # Format constants
@@ -58,6 +60,10 @@ HEADER_HAS_POSITION_KEYS = 1
 HEADER_HAS_ROTATION_KEYS = 1
 HEADER_HAS_SCALE_KEYS = 0
 DEFAULT_ACCUMULATION_FLAGS = (0, 0, 1, 2, 3)
+CUSTOM_SKELETON_BONE_MISMATCH_WARNING = (
+    "[WARNING] Exporting bones doesn't match as original armature bones. "
+    "If you intent to build a custom skeleton, ignore this warning."
+)
 
 PROPERTY_PREFIX = "NeoX:CPDAnimation:"
 PROPERTY_CHECKSUM = PROPERTY_PREFIX + "checksum"
@@ -234,17 +240,31 @@ def warn_once(warnings: list[str], message: str) -> None:
         print(f"[CPD Export] Warning: {message}")
 
 
+def warn_if_pose_bones_mismatch_import_order(
+    armature_obj: bpy.types.Object,
+    warnings: list[str],
+) -> None:
+    if "NeoX:BoneOrder" not in armature_obj:
+        return
+
+    pose_bone_names = {pose_bone.name for pose_bone in armature_obj.pose.bones}
+    original_bone_names = {str(name) for name in armature_obj["NeoX:BoneOrder"]}
+
+    if pose_bone_names != original_bone_names:
+        warn_once(warnings, CUSTOM_SKELETON_BONE_MISMATCH_WARNING)
+
+
 # -----------------------------------------------------------------------------
 # Source-rest conversion
 # -----------------------------------------------------------------------------
 
 
-def id_property_matrix_to_source_column(value: object) -> Matrix:
+def source_row_values_to_source_column(value: object) -> Matrix:
     """Convert flattened source row-vector matrix to column-vector Matrix."""
     flat = [float(component) for component in value]  # type: ignore[arg-type]
     if len(flat) != 16:
         raise CPDExportError(
-            f"Expected 16 values in Neox:BoneMatrix, got {len(flat)}."
+            f"Expected 16 values in source row matrix, got {len(flat)}."
         )
 
     source_row = Matrix(
@@ -263,11 +283,6 @@ def get_active_armature_with_action() -> tuple[bpy.types.Object, bpy.types.Actio
     if obj is None or obj.type != "ARMATURE":
         raise CPDExportError("The active object must be the armature to export.")
 
-    if "NeoX:BoneOrder" not in obj:
-        raise CPDExportError('Active armature has no "NeoX:BoneOrder" property.')
-    if "Neox:BoneMatrix" not in obj:
-        raise CPDExportError('Active armature has no "Neox:BoneMatrix" property.')
-
     animation_data = obj.animation_data
     if animation_data is None or animation_data.action is None:
         raise CPDExportError("The active armature has no active Action.")
@@ -277,35 +292,15 @@ def get_active_armature_with_action() -> tuple[bpy.types.Object, bpy.types.Actio
 
 def build_source_rest_bones(
     armature_obj: bpy.types.Object,
-    bone_order: Sequence[str],
+    ordered_bones: Sequence[bpy.types.Bone],
 ) -> dict[str, SourceRestBone]:
-    source_matrices_property = armature_obj["Neox:BoneMatrix"]
-    source_order_property = [str(name) for name in armature_obj["NeoX:BoneOrder"]]
-
-    if list(bone_order) != source_order_property:
-        raise CPDExportError(
-            "The supplied bone order does not match NeoX:BoneOrder."
-        )
-
-    if len(source_order_property) != len(source_matrices_property):
-        raise CPDExportError(
-            "NeoX:BoneOrder and Neox:BoneMatrix have different lengths: "
-            f"{len(source_order_property)} vs {len(source_matrices_property)}."
-        )
-
-    missing_blender_bones = [
-        name for name in source_order_property if name not in armature_obj.data.bones
-    ]
-    if missing_blender_bones:
-        raise CPDExportError(
-            "NeoX:BoneOrder contains bone(s) absent from the armature: "
-            + ", ".join(missing_blender_bones)
-        )
+    bone_order = [bone.name for bone in ordered_bones]
+    source_row_matrices = build_bone_matrices(list(ordered_bones))
 
     source_global_by_name: dict[str, Matrix] = {}
-    for index, name in enumerate(source_order_property):
-        source_global_by_name[name] = id_property_matrix_to_source_column(
-            source_matrices_property[index]
+    for index, name in enumerate(bone_order):
+        source_global_by_name[name] = source_row_values_to_source_column(
+            source_row_matrices[index]
         )
 
     axis_matrix = axis_conversion(
@@ -317,7 +312,7 @@ def build_source_rest_bones(
 
     result: dict[str, SourceRestBone] = {}
 
-    for name in source_order_property:
+    for name in bone_order:
         blender_bone = armature_obj.data.bones[name]
         source_global = source_global_by_name[name]
 
@@ -328,7 +323,7 @@ def build_source_rest_bones(
             if parent_name not in source_global_by_name:
                 raise CPDExportError(
                     f"Bone '{name}' has parent '{parent_name}', but the parent is "
-                    "missing from NeoX:BoneOrder."
+                    "missing from the canonical export bone order."
                 )
             source_local = (
                 source_global_by_name[parent_name].inverted_safe()
@@ -1246,16 +1241,16 @@ def export_cpdanimation(
         raise CPDExportError("The armature has no active Action.")
     action = animation_data.action
 
-    if "NeoX:BoneOrder" not in armature_obj:
-        raise CPDExportError('Armature has no "NeoX:BoneOrder" property.')
-    if "Neox:BoneMatrix" not in armature_obj:
-        raise CPDExportError('Armature has no "Neox:BoneMatrix" property.')
+    try:
+        ordered_bones = build_export_bone_order(armature_obj)
+    except Exception as exc:
+        raise CPDExportError(f"Failed to build export bone order: {exc}") from exc
 
-    bone_order = [str(name) for name in armature_obj["NeoX:BoneOrder"]]
+    bone_order = [bone.name for bone in ordered_bones]
     if not bone_order:
-        raise CPDExportError("NeoX:BoneOrder is empty.")
+        raise CPDExportError("The armature contains no exportable bones.")
     if len(set(bone_order)) != len(bone_order):
-        raise CPDExportError("NeoX:BoneOrder contains duplicate bone names.")
+        raise CPDExportError("Export bone order contains duplicate bone names.")
 
     if PROPERTY_PACK_PRS_FLAGS in armature_obj:
         stored_pack_flags = int(armature_obj[PROPERTY_PACK_PRS_FLAGS])
@@ -1279,6 +1274,7 @@ def export_cpdanimation(
     )
 
     warnings: list[str] = []
+    warn_if_pose_bones_mismatch_import_order(armature_obj, warnings)
     inspect_action_features(action, warnings)
 
     action_start = float(action.frame_range[0])
@@ -1313,7 +1309,10 @@ def export_cpdanimation(
             f"FPS {export_fps}.",
         )
 
-    source_rest = build_source_rest_bones(armature_obj, bone_order)
+    try:
+        source_rest = build_source_rest_bones(armature_obj, ordered_bones)
+    except Exception as exc:
+        raise CPDExportError(f"Failed to build source rest bones: {exc}") from exc
 
     tracks: list[ExportBoneTrack] = []
     for bone_name in bone_order:
