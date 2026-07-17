@@ -6,19 +6,17 @@ Blender plugin for 3D Migoto mods and proprietary engine level mods for the cert
 
 # Features
 ## 3D Migoto
-- Automated Asset Detection: Filters 3D models and excludes 2D/UI elements.
+- Automated Asset Detection: Filters 3D models and excludes 2D/UI elements. (Outdated since preprietary engine version 3)
 - Auto-Texture Assignment: Automatically maps textures to materials.
 - Mesh Importer: Imports ib/vb0*.txt files (.buf files excluded)
 - Mod Exporter: Automates .ini file creation for mod loaders.
 
 ## Proprietary Engine
-- Mesh Importer: Parses proprietary binary formats into Blender.
-- Mesh Exporter: Exports the model as proprietary binary format.
-- Mod Exporter: Supports custom mesh-data, skeleton, and animation kit selection.
-- Socket Operations: Tools for manipulating bone attachment points.
-
-# 3D Migoto Importing
-Use [XXMI-Tools](https://github.com/leotorrez/XXMITools) to importing 3D Migoto frame dumps
+- Mesh Importer/Exporter
+- Socket Operations
+- Custom Armature Exporting
+- Animation Importer/Exporter
+- Mod Exporter
 
 # Preview
 <img width="1509" height="810" alt="496562350-1765e11f-10dd-49cb-a349-da3ae8b7cbde" src="https://github.com/user-attachments/assets/7677736c-3c73-4065-98b6-519d28a3be1a" />
