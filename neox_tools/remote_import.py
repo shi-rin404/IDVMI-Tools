@@ -117,6 +117,7 @@ def _make_asset_index():
                 "cryptography was installed, but FileFinderV2 AES decoder is still unavailable"
             )
 
+    _install_root_archive_parse_fallback(assets_module)
     return assets_module.AssetIndex(_detect_game_root())
 
 
@@ -224,6 +225,7 @@ def _install_cryptography_into_vendor() -> None:
 
 def _reload_filefinder_archive_modules() -> None:
     for module_name in (
+        "filefinder.core.paths",
         "filefinder.archive.codecs",
         "filefinder.archive.idx_wpk",
         "auto_mod.assets",
@@ -231,6 +233,39 @@ def _reload_filefinder_archive_modules() -> None:
         module = sys.modules.get(module_name)
         if module is not None:
             importlib.reload(module)
+
+
+def _install_root_archive_parse_fallback(assets_module) -> None:
+    current_parse = assets_module.parse_asset_path
+    if getattr(current_parse, "_idvmi_root_archive_fallback", False):
+        return
+
+    from filefinder.core import paths as paths_module
+
+    def parse_asset_path_with_root_archive_fallback(raw_path: str, archives: dict):
+        try:
+            return current_parse(raw_path, archives)
+        except ValueError:
+            normalized = paths_module.ThyLookupTable.normalize_path(raw_path)
+            root_name, separator, stripped = normalized.partition("/")
+            if not separator or not root_name or not stripped:
+                raise
+
+            archive = next(
+                (item for item in archives.values() if item.stem == root_name),
+                None,
+            )
+            if archive is None:
+                raise
+
+            return paths_module.ParsedInput(
+                raw_path=raw_path,
+                archive=archive,
+                normalized_path=paths_module.ThyLookupTable.normalize_path(stripped),
+            )
+
+    parse_asset_path_with_root_archive_fallback._idvmi_root_archive_fallback = True
+    assets_module.parse_asset_path = parse_asset_path_with_root_archive_fallback
 
 
 def _detect_game_root() -> Path:
