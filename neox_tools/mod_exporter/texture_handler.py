@@ -28,19 +28,23 @@ def _material_texture_path(material):
     return None
 
 def _shader_textures_from_mesh_materials(mesh_obj):
-    expected_names = {
-        f"TexNormal_{mesh_obj.name}": "TexNormal",
-        f"TexMetal_{mesh_obj.name}": "TexMetal",
-    }
     found = {}
 
     for material in mesh_obj.data.materials:
-        if material is None or material.name not in expected_names:
+        if material is None:
+            continue
+
+        shader_key = None
+        if material.name.startswith("TexNormal"):
+            shader_key = "TexNormal"
+        elif material.name.startswith("TexMetal"):
+            shader_key = "TexMetal"
+        else:
             continue
 
         texture_path = _material_texture_path(material)
-        if texture_path:
-            found[expected_names[material.name]] = texture_path
+        if texture_path and shader_key not in found:
+            found[shader_key] = texture_path
 
     return found
 

@@ -385,10 +385,14 @@ def _ensure_textured_material(name: str, image_path: str | None, operator, shade
             output.location = (400, 0)
         links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
 
-    texture = next((node for node in nodes if node.type == 'TEX_IMAGE'), None)
+    texture = nodes.get(f"{shader_tag}_Image")
+    if texture is None:
+        texture = next((node for node in nodes if node.type == 'TEX_IMAGE'), None)
     if texture is None:
         texture = nodes.new("ShaderNodeTexImage")
         texture.location = (-400, 0)
+    texture.name = f"{shader_tag}_Image"
+    texture.label = shader_tag
 
     if image_path and os.path.isfile(image_path):
         try:
@@ -399,6 +403,11 @@ def _ensure_textured_material(name: str, image_path: str | None, operator, shade
             operator.report({'WARNING'}, f"Texture could not be loaded: {image_path} ({e})")
         else:
             texture.image.alpha_mode = 'NONE' if shader_tag == "Tex0" else 'CHANNEL_PACKED'
+            if shader_tag != "Tex0":
+                try:
+                    texture.image.colorspace_settings.name = 'Non-Color'
+                except Exception:
+                    pass
 
     has_color_link = any(
         link.from_node == texture
@@ -413,6 +422,117 @@ def _ensure_textured_material(name: str, image_path: str | None, operator, shade
     return material
 
 
+def _remove_links_to_socket(links, socket) -> None:
+    if socket is None:
+        return
+    for link in list(links):
+        if link.to_socket == socket:
+            links.remove(link)
+
+
+def _get_or_create_node(nodes, node_type: str, name: str, location: tuple[int, int]):
+    node = nodes.get(name)
+    if node is not None and node.bl_idname != node_type:
+        nodes.remove(node)
+        node = None
+    if node is None:
+        node = nodes.new(node_type)
+    node.name = name
+    node.label = name
+    node.location = location
+    return node
+
+
+def _set_image_node_image(node, image_path: str | None, operator) -> bool:
+    if not image_path or not os.path.isfile(image_path):
+        return False
+    try:
+        image = bpy.data.images.load(image_path, check_existing=True)
+    except TypeError:
+        image = bpy.data.images.load(image_path)
+    except Exception as e:
+        operator.report({'WARNING'}, f"Texture could not be loaded: {image_path} ({e})")
+        return False
+
+    image.alpha_mode = 'CHANNEL_PACKED'
+    try:
+        image.colorspace_settings.name = 'Non-Color'
+    except Exception:
+        pass
+    node.image = image
+    return True
+
+
+def _link_if_absent(links, from_socket, to_socket) -> None:
+    if from_socket is None or to_socket is None:
+        return
+    for link in links:
+        if link.from_socket == from_socket and link.to_socket == to_socket:
+            return
+    _remove_links_to_socket(links, to_socket)
+    links.new(from_socket, to_socket)
+
+
+def _configure_remote_shader_maps(tex0_material, material_info: dict[str, str], operator) -> None:
+    if tex0_material is None or not tex0_material.use_nodes:
+        return
+
+    nodes = tex0_material.node_tree.nodes
+    links = tex0_material.node_tree.links
+    bsdf = nodes.get("Principled BSDF")
+    diffuse_node = nodes.get("Tex0_Image")
+    if bsdf is None or diffuse_node is None:
+        return
+
+    diffuse_color = diffuse_node.outputs.get("Color")
+    base_color = bsdf.inputs.get("Base Color")
+
+    metal_path = material_info.get("TexMetal")
+    if metal_path:
+        metal_node = _get_or_create_node(nodes, "ShaderNodeTexImage", "TexMetal_Shader_Image", (-760, -260))
+        if _set_image_node_image(metal_node, metal_path, operator):
+            separate_metal = _get_or_create_node(nodes, "ShaderNodeSeparateRGB", "TexMetal_Separate_RGB", (-520, -260))
+            _link_if_absent(links, metal_node.outputs["Color"], separate_metal.inputs["Image"])
+            _link_if_absent(links, separate_metal.outputs["R"], bsdf.inputs.get("Metallic"))
+            _link_if_absent(links, separate_metal.outputs["B"], bsdf.inputs.get("Roughness"))
+
+            if diffuse_color is not None and base_color is not None:
+                multiply = _get_or_create_node(nodes, "ShaderNodeMixRGB", "TexMetal_Light_Multiply", (-190, 30))
+                multiply.blend_type = 'MULTIPLY'
+                multiply.inputs["Fac"].default_value = 1.0
+                _remove_links_to_socket(links, multiply.inputs["Color1"])
+                _remove_links_to_socket(links, multiply.inputs["Color2"])
+                links.new(diffuse_color, multiply.inputs["Color1"])
+                links.new(separate_metal.outputs["G"], multiply.inputs["Color2"])
+                _link_if_absent(links, multiply.outputs["Color"], base_color)
+
+    normal_path = material_info.get("TexNormal")
+    if normal_path:
+        normal_node = _get_or_create_node(nodes, "ShaderNodeTexImage", "TexNormal_Shader_Image", (-760, -620))
+        if _set_image_node_image(normal_node, normal_path, operator):
+            separate_normal = _get_or_create_node(nodes, "ShaderNodeSeparateRGB", "TexNormal_Separate_RGB", (-520, -620))
+            combine_normal = _get_or_create_node(nodes, "ShaderNodeCombineRGB", "TexNormal_Combine_RGB", (-300, -590))
+            value_one = _get_or_create_node(nodes, "ShaderNodeValue", "TexNormal_Z_One", (-520, -790))
+            normal_map = _get_or_create_node(nodes, "ShaderNodeNormalMap", "TexNormal_Normal_Map", (-80, -560))
+
+            value_one.outputs["Value"].default_value = 1.0
+            normal_map.inputs["Strength"].default_value = 1.0
+
+            _link_if_absent(links, normal_node.outputs["Color"], separate_normal.inputs["Image"])
+            _link_if_absent(links, separate_normal.outputs["R"], combine_normal.inputs["R"])
+            _link_if_absent(links, separate_normal.outputs["G"], combine_normal.inputs["G"])
+            _link_if_absent(links, value_one.outputs["Value"], combine_normal.inputs["B"])
+            _link_if_absent(links, combine_normal.outputs["Image"], normal_map.inputs["Color"])
+            _link_if_absent(links, normal_map.outputs["Normal"], bsdf.inputs.get("Normal"))
+
+            alpha_socket = bsdf.inputs.get("Alpha")
+            if alpha_socket is not None:
+                _link_if_absent(links, separate_normal.outputs["B"], alpha_socket)
+                tex0_material.blend_method = 'HASHED'
+                if hasattr(tex0_material, "shadow_method"):
+                    tex0_material.shadow_method = 'HASHED'
+
+
 def _assign_remote_material_slots(mesh_obj, mesh_index: int, package: RemoteMaterialPackage | None, operator, log) -> None:
     if package is None:
         return
@@ -422,6 +542,7 @@ def _assign_remote_material_slots(mesh_obj, mesh_index: int, package: RemoteMate
         log.write(f"    No remote material metadata for mesh {mesh_index}.\n"); log.flush()
         return
 
+    materials_by_tag = {}
     for slot_index, tag in enumerate(("Tex0", "TexNormal", "TexMetal")):
         material = _ensure_textured_material(
             f"{tag}_{mesh_obj.name}",
@@ -429,10 +550,13 @@ def _assign_remote_material_slots(mesh_obj, mesh_index: int, package: RemoteMate
             operator,
             tag,
         )
+        materials_by_tag[tag] = material
         if len(mesh_obj.data.materials) <= slot_index:
             mesh_obj.data.materials.append(material)
         else:
             mesh_obj.data.materials[slot_index] = material
+
+    _configure_remote_shader_maps(materials_by_tag.get("Tex0"), material_info, operator)
 
 
 def import_per_material(model, obj_name: str, operator, remote_material_package: RemoteMaterialPackage | None = None):
