@@ -369,7 +369,7 @@ def _remote_material_for_mesh(package: RemoteMaterialPackage, mesh_index: int) -
     return package.materials[material_index]
 
 
-def _ensure_textured_material(name: str, image_path: str | None, operator):
+def _ensure_textured_material(name: str, image_path: str | None, operator, shader_tag: str):
     material = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     material.use_nodes = True
 
@@ -398,7 +398,7 @@ def _ensure_textured_material(name: str, image_path: str | None, operator):
         except Exception as e:
             operator.report({'WARNING'}, f"Texture could not be loaded: {image_path} ({e})")
         else:
-            texture.image.alpha_mode = 'CHANNEL_PACKED'
+            texture.image.alpha_mode = 'NONE' if shader_tag == "Tex0" else 'CHANNEL_PACKED'
 
     has_color_link = any(
         link.from_node == texture
@@ -427,6 +427,7 @@ def _assign_remote_material_slots(mesh_obj, mesh_index: int, package: RemoteMate
             f"{tag}_{mesh_obj.name}",
             material_info.get(tag),
             operator,
+            tag,
         )
         if len(mesh_obj.data.materials) <= slot_index:
             mesh_obj.data.materials.append(material)
