@@ -68,16 +68,41 @@ def _draw_export_mod(layout, scene, context, folder_box):
 
 
 def _draw_import_neox_mesh(layout, scene, context, folder_box):
+    folder_box.label(text="Import from...")
+    folder_box.prop(scene, "neox_mesh_import_source", text="")
+
+    if scene.neox_mesh_import_source == "remote":
+        folder_box.label(text="Remote .gim path")
+        folder_box.prop(scene, "neox_remote_gim_path", text="")
+        op = folder_box.operator(
+            "idvmi_neox.neox_importer",
+            text="Import Remote .gim",
+            icon="IMPORT",
+        )
+        op.filepath = ""
+        op.use_scene_selector = True
+        op.import_source = "remote"
+        return
+
     folder_box.label(text="NeoX Mesh")
-    folder_box.prop(scene, "neox_mesh_selector", text="")
-    op = layout.operator("idvmi_neox.neox_importer", icon="IMPORT")
-    op.use_scene_selector = True
+    op = folder_box.operator(
+        "idvmi_neox.neox_importer",
+        text="Select .mesh and Import",
+        icon="IMPORT",
+    )
+    op.filepath = ""
+    op.use_scene_selector = False
+    op.import_source = "local"
 
 def _draw_import_neox_animation(layout, scene, context, folder_box):
     folder_box.label(text="NeoX Animation")
-    folder_box.prop(scene, "neox_animation_selector", text="")
-    op = layout.operator("idvmi_neox.import_animation", icon="IMPORT")
-    op.use_scene_selector = True
+    op = folder_box.operator(
+        "idvmi_neox.import_animation",
+        text="Select .cpdanimation and Import",
+        icon="IMPORT",
+    )
+    op.filepath = ""
+    op.use_scene_selector = False
 
 def _draw_export_neox_animation(layout, scene, context, folder_box):
     folder_box.label(text="NeoX Animation")

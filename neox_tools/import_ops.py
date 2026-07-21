@@ -1,8 +1,11 @@
 from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
+from .remote_import import RemoteMaterialPackage, build_remote_material_package
 import bpy
+from io import BytesIO
 import os
 import statistics
 import struct
+from pathlib import Path
 from mathutils import Matrix, Vector
 from math import isfinite
 from bpy.props import BoolProperty, StringProperty
@@ -33,11 +36,19 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
         default=False,
         options={'HIDDEN'},
     )
+    import_source: StringProperty(
+        default="local",
+        options={'HIDDEN'},
+    )
 
     def invoke(self, context, event):
+        if self.import_source == "remote":
+            return self.execute(context)
+
         if self.use_scene_selector:
             return self.execute(context)
 
+        self.filter_glob = "*.mesh"
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
 
@@ -46,6 +57,9 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
         log_file = os.path.join(root, "import_per_material_log.txt")
         with open(log_file, "w") as log:
             log.write("--- New import session started ---\n")
+
+        if self.import_source == "remote":
+            return self._execute_remote(context)
 
         mesh_path = self.filepath or context.scene.neox_mesh_selector
         mesh_path = bpy.path.abspath(mesh_path)
@@ -65,22 +79,7 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
         context.scene.neox_mesh_selector = mesh_path
 
         with open(mesh_path, "rb") as mesh_file:
-            is_parser_tried = {parse_mesh_1: False, parse_mesh_2: False, parse_mesh_3: False}
-
-            for parser in is_parser_tried:
-                try:
-                    self.report({'INFO'}, f"Trying {parser.__name__}...")
-                    model = {}
-                    mesh_file.seek(0)
-                    is_parser_tried[parser] = True
-                    parser(model, mesh_file, self)
-                    if 'vertex_weight' in model:
-                        check_weights(model['vertex_weight'], self)
-                    break
-                except Exception as e:
-                    self.report({'ERROR'}, f"[{type(e).__name__}] {e}")
-                    model = {}
-                    continue
+            model = _parse_neox_mesh(mesh_file, self)
 
 
         if model == {}:
@@ -94,6 +93,40 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
             return {'FINISHED'}
         else:
             return {'CANCELLED'}
+
+    def _execute_remote(self, context):
+        gim_asset_path = context.scene.neox_remote_gim_path.strip()
+        if not gim_asset_path:
+            self.report({'ERROR'}, "Please enter a remote .gim asset path")
+            return {'CANCELLED'}
+
+        cache_root = Path(__file__).resolve().parent / "remote_import_cache"
+        try:
+            package = build_remote_material_package(gim_asset_path, cache_root)
+        except Exception as e:
+            log_file = os.path.join(os.path.dirname(__file__), "import_per_material_log.txt")
+            with open(log_file, "a") as log:
+                import traceback
+                log.write("--- Remote import failed while building material package ---\n")
+                traceback.print_exc(file=log)
+            self.report({'ERROR'}, f"Remote import failed: {e}")
+            return {'CANCELLED'}
+
+        model = _parse_neox_mesh(BytesIO(package.mesh_data), self)
+        if model == {}:
+            self.report({'ERROR'}, "Model can't be decoded")
+            return {'CANCELLED'}
+
+        context.scene.neox_remote_gim_path = gim_asset_path
+        obj_name = os.path.basename(package.mesh_asset_path).rsplit(".", 1)[0]
+        if import_per_material(model, obj_name, self, package):
+            for warning in package.warnings[:8]:
+                self.report({'WARNING'}, warning)
+            if len(package.warnings) > 8:
+                self.report({'WARNING'}, f"{len(package.warnings) - 8} more remote import warning(s)")
+            self.report({'INFO'}, f"Remote import OK -> {package.mesh_asset_path}")
+            return {'FINISHED'}
+        return {'CANCELLED'}
 
 
 def menu_func_import(self, context):
@@ -119,6 +152,24 @@ else:
     # .mesh files dropped into the viewport may be claimed by Blender's built-in
     # image drop handler, so the supported path is File > Import > NeoX Mesh.
     IDVMI_FH_Neox_Mesh = None
+
+def _parse_neox_mesh(mesh_file, operator):
+    is_parser_tried = {parse_mesh_1: False, parse_mesh_2: False, parse_mesh_3: False}
+
+    for parser in is_parser_tried:
+        try:
+            operator.report({'INFO'}, f"Trying {parser.__name__}...")
+            model = {}
+            mesh_file.seek(0)
+            is_parser_tried[parser] = True
+            parser(model, mesh_file, operator)
+            if 'vertex_weight' in model:
+                check_weights(model['vertex_weight'], operator)
+            return model
+        except Exception as e:
+            operator.report({'ERROR'}, f"[{type(e).__name__}] {e}")
+            continue
+    return {}
 
 def check_weights(weight_data, operator):
     for weights in weight_data:
@@ -305,7 +356,85 @@ def _ensure_byte(value: int) -> int:
         raise ValueError(f"Serialized BoneBoundingInfo byte out of range: {value}")
     return value
 
-def import_per_material(model, obj_name: str, operator):
+def _remote_material_for_mesh(package: RemoteMaterialPackage, mesh_index: int) -> dict[str, str] | None:
+    if not package.materials:
+        return None
+
+    material_index = package.submesh_mtl_indices.get(mesh_index)
+    if material_index is None:
+        material_index = mesh_index if mesh_index < len(package.materials) else 0
+
+    if material_index < 0 or material_index >= len(package.materials):
+        return None
+    return package.materials[material_index]
+
+
+def _ensure_textured_material(name: str, image_path: str | None, operator):
+    material = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+    material.use_nodes = True
+
+    nodes = material.node_tree.nodes
+    links = material.node_tree.links
+    bsdf = nodes.get("Principled BSDF")
+    if bsdf is None:
+        bsdf = nodes.new("ShaderNodeBsdfPrincipled")
+        bsdf.location = (200, 0)
+        output = next((node for node in nodes if node.type == 'OUTPUT_MATERIAL'), None)
+        if output is None:
+            output = nodes.new("ShaderNodeOutputMaterial")
+            output.location = (400, 0)
+        links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+
+    texture = next((node for node in nodes if node.type == 'TEX_IMAGE'), None)
+    if texture is None:
+        texture = nodes.new("ShaderNodeTexImage")
+        texture.location = (-400, 0)
+
+    if image_path and os.path.isfile(image_path):
+        try:
+            texture.image = bpy.data.images.load(image_path, check_existing=True)
+        except TypeError:
+            texture.image = bpy.data.images.load(image_path)
+        except Exception as e:
+            operator.report({'WARNING'}, f"Texture could not be loaded: {image_path} ({e})")
+        else:
+            texture.image.alpha_mode = 'CHANNEL_PACKED'
+
+    has_color_link = any(
+        link.from_node == texture
+        and link.from_socket.name == "Color"
+        and link.to_node == bsdf
+        and link.to_socket.name == "Base Color"
+        for link in links
+    )
+    if not has_color_link:
+        links.new(texture.outputs["Color"], bsdf.inputs["Base Color"])
+
+    return material
+
+
+def _assign_remote_material_slots(mesh_obj, mesh_index: int, package: RemoteMaterialPackage | None, operator, log) -> None:
+    if package is None:
+        return
+
+    material_info = _remote_material_for_mesh(package, mesh_index)
+    if material_info is None:
+        log.write(f"    No remote material metadata for mesh {mesh_index}.\n"); log.flush()
+        return
+
+    for slot_index, tag in enumerate(("Tex0", "TexNormal", "TexMetal")):
+        material = _ensure_textured_material(
+            f"{tag}_{mesh_obj.name}",
+            material_info.get(tag),
+            operator,
+        )
+        if len(mesh_obj.data.materials) <= slot_index:
+            mesh_obj.data.materials.append(material)
+        else:
+            mesh_obj.data.materials[slot_index] = material
+
+
+def import_per_material(model, obj_name: str, operator, remote_material_package: RemoteMaterialPackage | None = None):
     root = os.path.dirname(__file__)
     log_file = os.path.join(root, "import_per_material_log.txt")
 
@@ -849,6 +978,14 @@ def import_per_material(model, obj_name: str, operator):
                             u, v = model['uv'][global_vertex_idx]
                             uv_layer[loop_idx].uv = (u, 1.0 - v)
                 log.write(f"    ...done.\n"); log.flush()
+
+            _assign_remote_material_slots(
+                mesh_obj,
+                mesh_index,
+                remote_material_package,
+                operator,
+                log,
+            )
 
             if 'bone_name' in model:
                 # Create Vertex Groups for all bones

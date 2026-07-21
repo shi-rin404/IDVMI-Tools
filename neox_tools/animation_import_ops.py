@@ -112,6 +112,7 @@ class IDVMI_OT_Import_Neox_Animation(bpy.types.Operator, ImportHelper):
         if self.use_scene_selector:
             return self.execute(context)
 
+        self.filter_glob = "*.cpdanimation"
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 

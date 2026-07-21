@@ -8,12 +8,41 @@ ENCODE_GIM_FILE = False
 from copy import deepcopy
 import re, shutil, os, base64
 import xml.etree.ElementTree as ET
+import bpy
 from ...export_mod import shader_textures
 from ...export_mod import ini_maker
 from ..export_ops import get_armature
 from .xml_converter import io_handler, convert_handler
 
 _MULTI_MATCH_RE = re.compile(r"(?:[a-z]*?_[cde]_[a-z]*?)_(?:[a-z0-9]+_(mask|nor))", re.IGNORECASE)
+
+def _material_texture_path(material):
+    if not material or not material.use_nodes:
+        return None
+
+    for node in material.node_tree.nodes:
+        if node.type == 'TEX_IMAGE' and node.image:
+            path = bpy.path.abspath(node.image.filepath)
+            if path and os.path.isfile(path):
+                return path
+    return None
+
+def _shader_textures_from_mesh_materials(mesh_obj):
+    expected_names = {
+        f"TexNormal_{mesh_obj.name}": "TexNormal",
+        f"TexMetal_{mesh_obj.name}": "TexMetal",
+    }
+    found = {}
+
+    for material in mesh_obj.data.materials:
+        if material is None or material.name not in expected_names:
+            continue
+
+        texture_path = _material_texture_path(material)
+        if texture_path:
+            found[expected_names[material.name]] = texture_path
+
+    return found
 
 def texture_handler(export_path, context, operator):
     armature = get_armature(context, operator)
@@ -71,6 +100,8 @@ def texture_handler(export_path, context, operator):
                             if m and m.group(1).lower() == keyword:
                                 found_textures[shader_key] = os.path.join(source_dir, fname)
                                 break
+
+            found_textures.update(_shader_textures_from_mesh_materials(child))
 
             shader_defaults = {"TexMetal": shader_textures.default_metal, "TexNormal": shader_textures.default_normal}
             for shader_key in shader_defaults:

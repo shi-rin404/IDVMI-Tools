@@ -148,6 +148,22 @@ def register_props():
         default=""     # .blend'e göre relatif
     )
 
+    bpy.types.Scene.neox_mesh_import_source = bpy.props.EnumProperty(
+        name="Import Source",
+        description="Select where the NeoX mesh import should read from",
+        items=[
+            ('remote', "Remote file", "Import from a game asset .gim path"),
+            ('local', "Local file", "Import from a local .mesh file"),
+        ],
+        default='local'
+    )
+
+    bpy.types.Scene.neox_remote_gim_path = bpy.props.StringProperty(
+        name="Remote Gim Path",
+        description="Game asset path to a .gim prefab file",
+        default=""
+    )
+
     bpy.types.Scene.neox_animation_selector = bpy.props.StringProperty(
         name="NeoX Animation Selector",
         description="Select a .cpdanimation file",
