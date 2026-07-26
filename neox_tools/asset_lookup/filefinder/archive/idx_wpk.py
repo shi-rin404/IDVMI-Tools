@@ -302,7 +302,7 @@ class IDXWPKArchive:
     def _load_entry_data(self, entry: LoadedEntry) -> None:
         pkg_id = entry.pkg_id
 
-        if self.mode == "idx" and self.is_slot_file_pkg(pkg_id):
+        if self.mode == "idx" and self.is_slot_file_pkg(pkg_id) and not self.has_wpk_for_pkg(pkg_id):
             raw_data = self.read_slot_file_data(entry)
             if raw_data is None:
                 raise FileNotFoundError(
@@ -372,6 +372,9 @@ class IDXWPKArchive:
 
         entry.file_length = len(entry.data)
         entry.file_original_length = len(entry.data)
+
+    def has_wpk_for_pkg(self, pkg_id: int) -> bool:
+        return any(os.path.exists(candidate) for candidate in self.iter_wpk_path_candidates(pkg_id))
 
 
 def build_index_from_embedded_header(
