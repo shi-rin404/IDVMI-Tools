@@ -16,8 +16,6 @@ from .utils.gim_crypt import decode_gim_file
 
 
 NEOX_BINARY_MAGIC = b"\xC1\x59\x41\x0D"
-FILEFINDER_ROOT_ENV = "IDVMI_FILEFINDER_V2_ROOT"
-DEFAULT_FILEFINDER_ROOT = Path("S:/Project/Code/FileFinderV2")
 TEXTURE_TAGS = ("Tex0", "TexNormal", "TexMetal")
 _CRYPTOGRAPHY_INSTALL_ATTEMPTED = False
 
@@ -65,15 +63,14 @@ def build_remote_material_package(gim_asset_path: str, cache_root: Path) -> Remo
 
         material_textures: dict[str, str] = {}
         for tag, texture_reference in _texture_paths_from_mtl(mtl_root).items():
-            texture_asset_path = _resolve_reference(
-                asset_index,
-                _tga_to_dds(texture_reference),
-                resolved_mtl_path,
-            )
             try:
-                extracted_texture = asset_index.extract(texture_asset_path)
+                extracted_texture = _extract_texture_with_fallback(
+                    asset_index,
+                    texture_reference,
+                    resolved_mtl_path,
+                )
             except Exception as exc:
-                warnings.append(f"Texture not found: {texture_asset_path} ({exc})")
+                warnings.append(f"Texture not found: {texture_reference} ({exc})")
                 continue
 
             material_textures[tag] = _write_asset_cache(
@@ -96,29 +93,18 @@ def build_remote_material_package(gim_asset_path: str, cache_root: Path) -> Remo
 
 def _make_asset_index():
     _add_vendor_path()
-    filefinder_root = Path(os.environ.get(FILEFINDER_ROOT_ENV, DEFAULT_FILEFINDER_ROOT))
-    if not filefinder_root.is_dir():
-        raise FileNotFoundError(
-            f"FileFinderV2 was not found at {filefinder_root}. "
-            f"Set {FILEFINDER_ROOT_ENV} to the project folder."
-        )
-    root_text = str(filefinder_root)
-    if root_text not in sys.path:
-        sys.path.insert(0, root_text)
 
-    from auto_mod import assets as assets_module
-
-    if not _filefinder_has_aes():
+    if not _asset_lookup_has_aes():
         _install_cryptography_into_vendor()
-        _reload_filefinder_archive_modules()
-        from auto_mod import assets as assets_module
-        if not _filefinder_has_aes():
+        _reload_asset_lookup_modules()
+        if not _asset_lookup_has_aes():
             raise RuntimeError(
-                "cryptography was installed, but FileFinderV2 AES decoder is still unavailable"
+                "cryptography was installed, but the built-in AES decoder is still unavailable"
             )
 
-    _install_root_archive_parse_fallback(assets_module)
-    return assets_module.AssetIndex(_detect_game_root())
+    from .asset_lookup.assets import AssetIndex
+
+    return AssetIndex(_detect_game_root())
 
 
 def _vendor_root() -> Path:
@@ -132,9 +118,9 @@ def _add_vendor_path() -> None:
         sys.path.insert(0, vendor_text)
 
 
-def _filefinder_has_aes() -> bool:
+def _asset_lookup_has_aes() -> bool:
     try:
-        from filefinder.archive import codecs
+        from .asset_lookup.filefinder.archive import codecs
     except Exception:
         return False
     return bool(getattr(codecs, "HAS_AES", False))
@@ -223,49 +209,16 @@ def _install_cryptography_into_vendor() -> None:
         ) from exc
 
 
-def _reload_filefinder_archive_modules() -> None:
+def _reload_asset_lookup_modules() -> None:
     for module_name in (
-        "filefinder.core.paths",
-        "filefinder.archive.codecs",
-        "filefinder.archive.idx_wpk",
-        "auto_mod.assets",
+        f"{__package__}.asset_lookup.filefinder.archive.codecs",
+        f"{__package__}.asset_lookup.filefinder.archive.idx_wpk",
+        f"{__package__}.asset_lookup.filefinder.core.paths",
+        f"{__package__}.asset_lookup.assets",
     ):
         module = sys.modules.get(module_name)
         if module is not None:
             importlib.reload(module)
-
-
-def _install_root_archive_parse_fallback(assets_module) -> None:
-    current_parse = assets_module.parse_asset_path
-    if getattr(current_parse, "_idvmi_root_archive_fallback", False):
-        return
-
-    from filefinder.core import paths as paths_module
-
-    def parse_asset_path_with_root_archive_fallback(raw_path: str, archives: dict):
-        try:
-            return current_parse(raw_path, archives)
-        except ValueError:
-            normalized = paths_module.ThyLookupTable.normalize_path(raw_path)
-            root_name, separator, stripped = normalized.partition("/")
-            if not separator or not root_name or not stripped:
-                raise
-
-            archive = next(
-                (item for item in archives.values() if item.stem == root_name),
-                None,
-            )
-            if archive is None:
-                raise
-
-            return paths_module.ParsedInput(
-                raw_path=raw_path,
-                archive=archive,
-                normalized_path=paths_module.ThyLookupTable.normalize_path(stripped),
-            )
-
-    parse_asset_path_with_root_archive_fallback._idvmi_root_archive_fallback = True
-    assets_module.parse_asset_path = parse_asset_path_with_root_archive_fallback
 
 
 def _detect_game_root() -> Path:
@@ -322,9 +275,9 @@ def _xml_root_from_bytes(data: bytes, suffix: str, asset_path: str) -> ET.Elemen
 
 def _payload_decode_hint() -> str:
     try:
-        from filefinder.archive import codecs
+        from .asset_lookup.filefinder.archive import codecs
     except Exception:
-        return "FileFinderV2 payload decoder status could not be inspected"
+        return "Built-in asset payload decoder status could not be inspected"
 
     if not getattr(codecs, "HAS_AES", False):
         return "Blender Python is missing cryptography, so AES-packed assets cannot be decoded"
@@ -401,6 +354,31 @@ def _tga_to_dds(asset_path: str) -> str:
     if asset_path.lower().endswith(".tga"):
         return f"{asset_path[:-4]}.dds"
     return asset_path
+
+
+def _extract_texture_with_fallback(asset_index, texture_reference: str, base_asset_path: str):
+    dds_asset_path = _resolve_reference(
+        asset_index,
+        _tga_to_dds(texture_reference),
+        base_asset_path,
+    )
+    try:
+        return asset_index.extract(dds_asset_path)
+    except Exception as dds_error:
+        original_asset_path = _resolve_reference(
+            asset_index,
+            texture_reference,
+            base_asset_path,
+        )
+        if original_asset_path == dds_asset_path:
+            raise
+        try:
+            return asset_index.extract(original_asset_path)
+        except Exception as tga_error:
+            raise FileNotFoundError(
+                f"tried {dds_asset_path} ({dds_error}); "
+                f"then {original_asset_path} ({tga_error})"
+            ) from tga_error
 
 
 def _write_asset_cache(cache_root: Path, archive_prefix: str, normalized_path: str, data: bytes) -> str:
