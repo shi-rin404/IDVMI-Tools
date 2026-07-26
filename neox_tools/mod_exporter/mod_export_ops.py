@@ -157,11 +157,16 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
                     self.report({'ERROR'}, f"Custom skeleton export failed: {exc}")
                     return {'CANCELLED'}
 
-            gim_path = gim_handler(
-                export_path,
-                rig_handler(export_path, context, custom_skeleton=custom_skeleton),
-                arm_obj
-            )
+            try:
+                gim_path = gim_handler(
+                    export_path,
+                    rig_handler(export_path, context, custom_skeleton=custom_skeleton),
+                    arm_obj
+                )
+            except Exception as exc:
+                log.write(f"ERROR: Gim export failed: {exc}\n"); log.flush()
+                self.report({'ERROR'}, f"Gim export failed: {exc}")
+                return {'CANCELLED'}
 
             # Create mod.json
             mod_json_maker(

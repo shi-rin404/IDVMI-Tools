@@ -175,8 +175,14 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
 
         if scene.custom_gim_bool:
             rig_selector = layout.box()
-            rig_selector.label(text="Reference Gim File")
-            rig_selector.prop(scene, "gim_selector", text="") 
+            rig_selector.label(text="Gim Location")
+            rig_selector.prop(scene, "custom_gim_location", text="")
+            if scene.custom_gim_location == "remote":
+                rig_selector.label(text="Remote Gim Path")
+                rig_selector.prop(scene, "custom_gim_remote_path", text="")
+            elif scene.custom_gim_location == "local":
+                rig_selector.label(text="Reference Gim File")
+                rig_selector.prop(scene, "gim_selector", text="")
 
 
     mod_name = layout.box()

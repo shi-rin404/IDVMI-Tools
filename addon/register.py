@@ -56,6 +56,22 @@ def register_props():
         default=False
     )
 
+    bpy.types.Scene.custom_gim_location = bpy.props.EnumProperty(
+        name="Gim Location",
+        description="Remote = game asset path | Local = local .gim file",
+        items=[
+            ('remote', "Remote File", "Official game .gim asset"),
+            ('local', "Local File", "Local .gim file"),
+        ],
+        default='local'
+    )
+
+    bpy.types.Scene.custom_gim_remote_path = bpy.props.StringProperty(
+        name="Remote Gim Path",
+        description="Game asset path to a .gim prefab file",
+        default=""
+    )
+
     bpy.types.Scene.neox_mod_export_custom_skeleton = bpy.props.BoolProperty(
         name="Export with Custom Skeleton",
         description="Generate and bind a custom .skeleton during NeoX mod export",

@@ -6,171 +6,158 @@ Reading bone data from armature...
 Canonical bone order built: bones=69, roots=1
 Found 69 bones.
 Starting to process child meshes...
-  Processing mesh: bdz_e_meiaili_0.003
+  Processing mesh: tqz_e_heixin_0
     Transforming positions and normals...
     ...done.
     Processing UVs...
     ...done.
     Triangulating n-gons...
-    bdz_e_meiaili_0.003: no n-gons to triangulate.
+    tqz_e_heixin_0: no n-gons to triangulate.
     ...done.
     Calculating tangents and faces...
     ...done.
     Processing vertex groups and weights...
     ...done.
-  Finished processing mesh: bdz_e_meiaili_0.003
-  Processing mesh: cp_e_hm_4
+  Finished processing mesh: tqz_e_heixin_0
+  Processing mesh: tqz_e_heixin_1
     Transforming positions and normals...
     ...done.
     Processing UVs...
     ...done.
     Triangulating n-gons...
-    cp_e_hm_4: no n-gons to triangulate.
+    tqz_e_heixin_1: no n-gons to triangulate.
     ...done.
     Calculating tangents and faces...
     ...done.
     Processing vertex groups and weights...
     ...done.
-  Finished processing mesh: cp_e_hm_4
-  Processing mesh: deluosi_e_yibu_1.001
+  Finished processing mesh: tqz_e_heixin_1
+  Processing mesh: tqz_e_heixin_2
     Transforming positions and normals...
     ...done.
     Processing UVs...
     ...done.
     Triangulating n-gons...
-    deluosi_e_yibu_1.001: no n-gons to triangulate.
+    tqz_e_heixin_2: no n-gons to triangulate.
     ...done.
     Calculating tangents and faces...
     ...done.
     Processing vertex groups and weights...
     ...done.
-  Finished processing mesh: deluosi_e_yibu_1.001
-  Processing mesh: deluosi_e_yibu_2
+  Finished processing mesh: tqz_e_heixin_2
+  Processing mesh: tqz_e_heixin_3
     Transforming positions and normals...
     ...done.
     Processing UVs...
     ...done.
     Triangulating n-gons...
-    deluosi_e_yibu_2: no n-gons to triangulate.
+    tqz_e_heixin_3: no n-gons to triangulate.
     ...done.
     Calculating tangents and faces...
     ...done.
     Processing vertex groups and weights...
     ...done.
-  Finished processing mesh: deluosi_e_yibu_2
-  Processing mesh: gjs_e_llw_5
+  Finished processing mesh: tqz_e_heixin_3
+  Processing mesh: tqz_e_heixin_4
     Transforming positions and normals...
     ...done.
     Processing UVs...
     ...done.
     Triangulating n-gons...
-    gjs_e_llw_5: no n-gons to triangulate.
+    tqz_e_heixin_4: no n-gons to triangulate.
     ...done.
     Calculating tangents and faces...
     ...done.
     Processing vertex groups and weights...
     ...done.
-  Finished processing mesh: gjs_e_llw_5
-  Processing mesh: h55_survivor_w_cp_lv1_2
+  Finished processing mesh: tqz_e_heixin_4
+  Processing mesh: tqz_e_heixin_5
     Transforming positions and normals...
     ...done.
     Processing UVs...
     ...done.
     Triangulating n-gons...
-    h55_survivor_w_cp_lv1_2: no n-gons to triangulate.
+    tqz_e_heixin_5: no n-gons to triangulate.
     ...done.
     Calculating tangents and faces...
     ...done.
     Processing vertex groups and weights...
     ...done.
-  Finished processing mesh: h55_survivor_w_cp_lv1_2
-  Processing mesh: hlz_e_noir_0.001
+  Finished processing mesh: tqz_e_heixin_5
+  Processing mesh: tqz_e_heixin_6
     Transforming positions and normals...
     ...done.
     Processing UVs...
     ...done.
     Triangulating n-gons...
-    hlz_e_noir_0.001: no n-gons to triangulate.
+    tqz_e_heixin_6: no n-gons to triangulate.
     ...done.
     Calculating tangents and faces...
     ...done.
     Processing vertex groups and weights...
     ...done.
-  Finished processing mesh: hlz_e_noir_0.001
-  Processing mesh: jyz_e_jierda_0
+  Finished processing mesh: tqz_e_heixin_6
+  Processing mesh: tqz_e_heixin_7
     Transforming positions and normals...
     ...done.
     Processing UVs...
     ...done.
     Triangulating n-gons...
-    jyz_e_jierda_0: no n-gons to triangulate.
+    tqz_e_heixin_7: no n-gons to triangulate.
     ...done.
     Calculating tangents and faces...
     ...done.
     Processing vertex groups and weights...
     ...done.
-  Finished processing mesh: jyz_e_jierda_0
-  Processing mesh: tqz_e_qihai_2
+  Finished processing mesh: tqz_e_heixin_7
+  Processing mesh: tqz_e_heixin_8
     Transforming positions and normals...
     ...done.
     Processing UVs...
     ...done.
     Triangulating n-gons...
-    tqz_e_qihai_2: no n-gons to triangulate.
+    tqz_e_heixin_8: no n-gons to triangulate.
     ...done.
     Calculating tangents and faces...
     ...done.
     Processing vertex groups and weights...
     ...done.
-  Finished processing mesh: tqz_e_qihai_2
-  Processing mesh: tqz_e_tangguo_5
-    Transforming positions and normals...
-    ...done.
-    Processing UVs...
-    ...done.
-    Triangulating n-gons...
-    tqz_e_tangguo_5: no n-gons to triangulate.
-    ...done.
-    Calculating tangents and faces...
-    ...done.
-    Processing vertex groups and weights...
-    ...done.
-  Finished processing mesh: tqz_e_tangguo_5
-  Processing mesh: xiangshuishi_e_buffy_hair_0
-    Transforming positions and normals...
-    ...done.
-    Processing UVs...
-    ...done.
-    Triangulating n-gons...
-    xiangshuishi_e_buffy_hair_0: no n-gons to triangulate.
-    ...done.
-    Calculating tangents and faces...
-    ...done.
-    Processing vertex groups and weights...
-    ...done.
-  Finished processing mesh: xiangshuishi_e_buffy_hair_0
+  Finished processing mesh: tqz_e_heixin_8
 Rebuilding bone usage mask from final vertex weights...
 Rebuilding collision records from current mesh vertices...
-WARNING: Bone 'bone026' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'bone020' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'biped_bone02' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'biped_bone01' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'bone023' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'bone011' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone08' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone015' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone022' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
 WARNING: Bone 'biped' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'bone029' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone019' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
 WARNING: Bone 'bone017' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'bone003' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'bone008' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'bone009' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'biped_bone05' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'bone004' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'bone017' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone023' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone020' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone016' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone021' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone025' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
 WARNING: Bone 'bone026' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'biped_bone06' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-WARNING: Bone 'biped_bone07' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone018' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'biped_bone08' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'biped_bone09' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone007' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone003' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'biped_bone01' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone004' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'biped_bone05' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
 WARNING: Bone 'bone005' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
-Collision records rebuilt: records=69, zero=0, bone_size_fallback=19, threshold=0.5
+WARNING: Bone 'bone008' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'biped_bone02' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone011' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone024' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'biped_bone07' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone028' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone029' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone009' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone012' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'bone027' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+WARNING: Bone 'biped_bone06' has a vertex group but no collider points at weight >= 0.5; using bone-size collision fallback.
+Collision records rebuilt: records=69, zero=0, bone_size_fallback=32, threshold=0.5
 --- Finished mesh parsing ---
 --- Starting binary export ---
 Writing header...
@@ -201,6 +188,6 @@ Writing vertex weights...
 ...done.
 Writing footer data (BoneWeightUsageMask, LODTable)...
 ...done.
-Total file size: 901993 bytes. Writing to disk...
+Total file size: 993201 bytes. Writing to disk...
 ...done.
 --- Finished binary export successfully ---

@@ -1,4 +1,21 @@
 import os, bpy, shutil
+from pathlib import Path
+
+
+def _resolve_custom_gim_path(context):
+    if context.scene.custom_gim_location == "remote":
+        gim_asset_path = context.scene.custom_gim_remote_path.strip()
+        if not gim_asset_path:
+            raise ValueError("Please enter a remote .gim asset path")
+        if not gim_asset_path.lower().endswith(".gim"):
+            raise ValueError("Remote Gim path must point to a .gim file")
+
+        from ..remote_import import extract_remote_asset_to_cache
+
+        cache_root = Path(__file__).resolve().parents[1] / "remote_import_cache" / "export_gim"
+        return extract_remote_asset_to_cache(gim_asset_path, cache_root)
+
+    return bpy.path.abspath(context.scene.gim_selector)
 
 def rig_handler(export_path, context, custom_skeleton=False):
     rig_path_lib = {
@@ -27,13 +44,17 @@ def rig_handler(export_path, context, custom_skeleton=False):
         skeleton_path = os.path.join(rel_path, skeleton_path).replace("\\", "/")
 
     rig_lib_root_path = os.path.join(os.path.dirname(__file__), "rig_resource")
-    gim_path_lib = {
+    preset_gim_path_lib = {
         'woman': os.path.join(rig_lib_root_path, "dm65_survivor_w_yiyaoshi_lv1.gim"),
         'male': os.path.join(rig_lib_root_path, "h55_survivor_m_zbs_lv1.gim"),
         'little_girl': os.path.join(rig_lib_root_path, "dm65_survivor_girl.gim"),
-        'custom': bpy.path.abspath(context.scene.gim_selector)
     }
 
-    gim_selection = 'custom' if context.scene.custom_gim_bool else context.scene.neox_rig_selector
+    if context.scene.neox_rig_selector == 'custom':
+        gim_path = bpy.path.abspath(context.scene.gim_selector)
+    elif context.scene.custom_gim_bool:
+        gim_path = _resolve_custom_gim_path(context)
+    else:
+        gim_path = preset_gim_path_lib[context.scene.neox_rig_selector]
 
-    return {"animconfig": animconfig_path, "skeleton": skeleton_path, "gim": gim_path_lib[gim_selection]}
+    return {"animconfig": animconfig_path, "skeleton": skeleton_path, "gim": gim_path}

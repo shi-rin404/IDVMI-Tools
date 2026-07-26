@@ -91,6 +91,18 @@ def build_remote_material_package(gim_asset_path: str, cache_root: Path) -> Remo
     )
 
 
+def extract_remote_asset_to_cache(asset_path: str, cache_root: Path) -> str:
+    asset_index = _make_asset_index()
+    normalized = _normalize_asset_path(asset_path)
+    extracted = asset_index.extract(normalized)
+    return _write_asset_cache(
+        cache_root,
+        extracted.request.archive.prefix,
+        extracted.request.normalized_path,
+        extracted.data,
+    )
+
+
 def _make_asset_index():
     _add_vendor_path()
 
