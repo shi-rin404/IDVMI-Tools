@@ -7,7 +7,7 @@ from ..neox_tools.import_ops import IDVMI_FH_Neox_Mesh, IDVMI_OT_Import_Neox_Mes
 from ..neox_tools.animation_import_ops import IDVMI_OT_Import_Neox_Animation
 from ..neox_tools.animation_export_ops import IDVMI_OT_Export_Neox_Animation
 from ..neox_tools.export_ops import IDVMI_OT_Export_Neox_Mesh
-from ..addon import ui
+from ..addon import auto_update, ui
 from ..neox_tools.mod_exporter.mod_export_ops import IDVMI_OT_Export_Neox_Mod
 from ..neox_tools.socket_operations import bind_gim_ops, copy_socket_ops
 
@@ -25,6 +25,9 @@ classes = [
            bind_gim_ops.IDVMI_OT_Bind_Gim,
            ui.IDVMI_Neox_tools,
            ui.IDVMI_3DM_tools,
+           auto_update.IDVMI_Update_tools,
+           auto_update.IDVMI_OT_Check_Update,
+           auto_update.IDVMI_OT_Install_Update,
            extract_frame_dump.IDVMI_OT_extract_frame_dump,
            set_textures.IDVMI_OT_set_textures,
            Export3DMigoto,

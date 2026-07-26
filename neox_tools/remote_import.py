@@ -234,12 +234,20 @@ def _reload_asset_lookup_modules() -> None:
 
 
 def _detect_game_root() -> Path:
+    configured = os.environ.get("IDVMI_GAME_ROOT", "").strip()
+    if configured:
+        candidate = Path(configured)
+        if (candidate / "res").is_dir() and (candidate / "Documents" / "res").is_dir():
+            return candidate
+        raise FileNotFoundError(
+            f"IDVMI_GAME_ROOT does not point to an Identity V game root: {configured}"
+        )
+
     detected = check_game_directory()
     candidates: list[Path] = []
     if detected:
         detected_path = Path(detected)
         candidates.extend([detected_path, *detected_path.parents])
-    candidates.append(Path("S:/Loading Bay Games/Identity V"))
 
     for candidate in candidates:
         if (candidate / "res").is_dir() and (candidate / "Documents" / "res").is_dir():

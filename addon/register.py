@@ -419,4 +419,29 @@ def register_props():
         description="Normal texture t slot",
         default=7,
         min=0,
-    )    
+    )
+
+    bpy.types.Scene.idvmi_update_status = bpy.props.StringProperty(
+        name="Update Status",
+        default=""
+    )
+
+    bpy.types.Scene.idvmi_update_latest_version = bpy.props.StringProperty(
+        name="Latest Version",
+        default=""
+    )
+
+    bpy.types.Scene.idvmi_update_latest_url = bpy.props.StringProperty(
+        name="Latest Release URL",
+        default=""
+    )
+
+    bpy.types.Scene.idvmi_update_download_url = bpy.props.StringProperty(
+        name="Latest Download URL",
+        default=""
+    )
+
+    bpy.types.Scene.idvmi_update_available = bpy.props.BoolProperty(
+        name="Update Available",
+        default=False
+    )
