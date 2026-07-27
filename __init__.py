@@ -1,4 +1,5 @@
 import bpy
+from .addon import asset_finder_update
 from .addon.register import register_props
 from .addon.unregister import unregister_props
 from .addon.classes import classes
@@ -19,8 +20,10 @@ def register():
         bpy.utils.register_class(cls)
     register_props()
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
+    asset_finder_update.schedule_auto_update()
 
 def unregister():
+    asset_finder_update.reset_auto_update_state()
     try:
         bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     except ValueError:

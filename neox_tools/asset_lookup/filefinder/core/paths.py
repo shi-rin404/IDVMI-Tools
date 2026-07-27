@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..lookup.thy import ThyLookupTable
+from filefinder.lookup.thy import ThyLookupTable
 
 
 @dataclass(frozen=True)

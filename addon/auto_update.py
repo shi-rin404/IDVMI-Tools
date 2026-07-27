@@ -10,6 +10,8 @@ from pathlib import Path
 
 import bpy
 
+from . import asset_finder_update
+
 
 GITHUB_REPO = "shi-rin404/IDVMI-Tools"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -279,6 +281,7 @@ def _draw_update_panel(layout, scene) -> None:
     row.operator("idvmi.install_update", icon="IMPORT")
     if scene.idvmi_update_status:
         layout.label(text=scene.idvmi_update_status)
+    asset_finder_update.draw_asset_finder_update_panel(layout, scene)
 
 
 class IDVMI_Update_tools(bpy.types.Panel):
