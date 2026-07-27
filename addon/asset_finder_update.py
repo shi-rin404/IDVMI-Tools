@@ -18,12 +18,12 @@ from pathlib import Path
 import bpy
 
 
-GITHUB_REPO = "shi-rin404/BarbieAssetFinder"
+GITHUB_REPO = "shi-rin404/IDVMI-Tools"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 USER_AGENT = "IDVMI-Asset-Finder-Updater"
 SUPPORTED_API_VERSION = 1
-ASSET_PREFIX = "idvmi-api-"
-LEGACY_ASSET_PREFIX = "idvmi-asset-finder-"
+ASSET_PREFIX = "asset-finder-api-"
+LEGACY_ASSET_PREFIXES = ("idvmi-api-", "idvmi-asset-finder-")
 
 _UPDATE_LOCK = threading.Lock()
 _STATUS_LOCK = threading.Lock()
@@ -157,11 +157,15 @@ def _release_assets(release: dict) -> list[ReleaseAsset]:
     return assets
 
 
+def _accepted_prefixes() -> tuple[str, ...]:
+    return (ASSET_PREFIX, *LEGACY_ASSET_PREFIXES)
+
+
 def _select_manifest_asset(assets: list[ReleaseAsset]) -> ReleaseAsset:
     candidates = [
         asset
         for asset in assets
-        if asset.name.lower().startswith((ASSET_PREFIX, LEGACY_ASSET_PREFIX))
+        if asset.name.lower().startswith(_accepted_prefixes())
         and asset.name.lower().endswith(".json")
     ]
     if not candidates:
@@ -177,7 +181,7 @@ def _select_archive_asset(assets: list[ReleaseAsset], manifest: AssetFinderManif
     candidates = [
         asset
         for asset in assets
-        if asset.name.lower().startswith((ASSET_PREFIX, LEGACY_ASSET_PREFIX))
+        if asset.name.lower().startswith(_accepted_prefixes())
         and asset.name.lower().endswith(".zip")
     ]
     if not candidates:
@@ -202,7 +206,7 @@ def _embedded_manifest_member(archive: zipfile.ZipFile, archive_name: str) -> st
         name
         for name in archive.namelist()
         if not name.endswith("/")
-        and Path(name).name.lower().startswith((ASSET_PREFIX, LEGACY_ASSET_PREFIX))
+        and Path(name).name.lower().startswith(_accepted_prefixes())
         and Path(name).name.lower().endswith(".json")
     ]
     for name in names:
