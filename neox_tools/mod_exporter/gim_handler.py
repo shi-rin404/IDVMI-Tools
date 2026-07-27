@@ -14,7 +14,7 @@ def gim_handler(export_path:str, rig_info:dict, armature):
         element_tags, attribute_map = parse_handler.parseCustomBinFormat(rig_info["gim"])
         decoded_gim_data:list[ET.Element] = convert_handler.tagWrapper(element_tags, attribute_map)[0]
     else:
-        decoded_gim_data:list[ET.Element] = ET.parse(rig_info["gim"])    
+        decoded_gim_data:list[ET.Element] = ET.parse(rig_info["gim"]).getroot()
 
     # Mesh
     n = 0

@@ -62,7 +62,7 @@ def rig_handler(export_path, context, custom_skeleton=False):
     }
 
     if context.scene.neox_rig_selector == 'custom':
-        gim_path = bpy.path.abspath(context.scene.gim_selector)
+        gim_path = _resolve_custom_gim_path(context)
     elif context.scene.custom_gim_bool:
         gim_path = _resolve_custom_gim_path(context)
     else:

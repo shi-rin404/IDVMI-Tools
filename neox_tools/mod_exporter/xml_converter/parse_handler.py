@@ -1,18 +1,25 @@
 from typing import BinaryIO, Callable, Literal
 import os
+import xml.etree.ElementTree as ET
 from . import byte_handler as bh
 from .sub_parse_handler import attributeFunctions as af
 
 def typeFile(file_path:os.PathLike) -> Literal['Binary', 'XML']:
     with open(file_path, "rb") as f:
-        first_four_chars = f.read(4)
+        header = f.read(512)
         
-        if first_four_chars == b"\xC1\x59\x41\x0D":
+        if header.startswith(b"\xC1\x59\x41\x0D"):
             return 'Binary'
-        elif first_four_chars.decode(encoding="utf-8") == "<Neo":
-            return 'XML'
-        else:
-            raise Exception("File format error. Check your file <:")
+
+    xml_header = header.lstrip(b"\xef\xbb\xbf\r\n\t ")
+    if xml_header.startswith((b"<Neo", b"<?xml")):
+        try:
+            ET.parse(file_path)
+        except ET.ParseError as exc:
+            raise Exception(f"Invalid XML file: {file_path}") from exc
+        return 'XML'
+
+    raise Exception("File format error. Check your file <:") 
 
 def readUnknownLenInt(value:list[bytes]) -> int:
     bytes_value = b"".join(value)

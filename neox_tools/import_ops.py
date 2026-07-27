@@ -2,6 +2,7 @@ from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
 from .remote_import import RemoteMaterialPackage, build_remote_material_package
 import bpy
 from io import BytesIO
+import json
 import os
 import statistics
 import struct
@@ -119,7 +120,13 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
 
         context.scene.neox_remote_gim_path = gim_asset_path
         obj_name = os.path.basename(package.mesh_asset_path).rsplit(".", 1)[0]
-        if import_per_material(model, obj_name, self, package):
+        if import_per_material(
+            model,
+            obj_name,
+            self,
+            package,
+            import_sockets=context.scene.neox_remote_import_sockets,
+        ):
             for warning in package.warnings[:8]:
                 self.report({'WARNING'}, warning)
             if len(package.warnings) > 8:
@@ -559,7 +566,80 @@ def _assign_remote_material_slots(mesh_obj, mesh_index: int, package: RemoteMate
     _configure_remote_shader_maps(materials_by_tag.get("Tex0"), material_info, operator)
 
 
-def import_per_material(model, obj_name: str, operator, remote_material_package: RemoteMaterialPackage | None = None):
+def _socket_json(value) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _delete_custom_properties(id_owner, property_names: tuple[str, ...]) -> None:
+    for property_name in property_names:
+        if property_name in id_owner:
+            del id_owner[property_name]
+
+
+def _serialize_remote_sockets(armature_obj, package: RemoteMaterialPackage, log) -> int:
+    root_sockets = []
+    unresolved_sockets = []
+    sockets_by_bone: dict[str, list[dict]] = {}
+
+    for pbone in armature_obj.pose.bones:
+        _delete_custom_properties(
+            pbone,
+            (
+                "NeoX:Sockets",
+                "NeoX:SocketCount",
+            ),
+        )
+
+    _delete_custom_properties(
+        armature_obj,
+        (
+            "NeoX:Sockets",
+            "NeoX:SocketCount",
+            "NeoX:RootSockets",
+            "NeoX:RootSocketCount",
+            "NeoX:UnresolvedSockets",
+            "NeoX:UnresolvedSocketCount",
+        ),
+    )
+
+    for socket in package.sockets:
+        binding_bone = str(socket.get("binding_bone", "")).strip()
+        if not binding_bone:
+            root_sockets.append(socket)
+        elif armature_obj.pose.bones.get(binding_bone) is not None:
+            sockets_by_bone.setdefault(binding_bone, []).append(socket)
+        else:
+            unresolved_sockets.append(socket)
+
+    for bone_name, sockets in sockets_by_bone.items():
+        pbone = armature_obj.pose.bones[bone_name]
+        pbone["NeoX:Sockets"] = _socket_json(sockets)
+        pbone["NeoX:SocketCount"] = len(sockets)
+
+    armature_obj["NeoX:SocketSchemaVersion"] = 1
+    armature_obj["NeoX:SocketSourceGim"] = package.gim_asset_path
+    armature_obj["NeoX:RootSockets"] = _socket_json(root_sockets)
+    armature_obj["NeoX:RootSocketCount"] = len(root_sockets)
+    armature_obj["NeoX:UnresolvedSockets"] = _socket_json(unresolved_sockets)
+    armature_obj["NeoX:UnresolvedSocketCount"] = len(unresolved_sockets)
+
+    log.write(
+        "Serialized NeoX sockets: "
+        f"bound={sum(len(items) for items in sockets_by_bone.values())}, "
+        f"root={len(root_sockets)}, unresolved={len(unresolved_sockets)}.\n"
+    )
+    log.flush()
+    return len(unresolved_sockets)
+
+
+def import_per_material(
+    model,
+    obj_name: str,
+    operator,
+    remote_material_package: RemoteMaterialPackage | None = None,
+    *,
+    import_sockets: bool = False,
+):
     root = os.path.dirname(__file__)
     log_file = os.path.join(root, "import_per_material_log.txt")
 
@@ -951,6 +1031,17 @@ def import_per_material(model, obj_name: str, operator, remote_material_package:
                     model['bone_weight_usage']['flags']
                 )
             armature_obj['NeoX:LODTable'] = model['lod_data_table']
+            if import_sockets and remote_material_package is not None:
+                unresolved_count = _serialize_remote_sockets(
+                    armature_obj,
+                    remote_material_package,
+                    log,
+                )
+                if unresolved_count:
+                    operator.report(
+                        {'WARNING'},
+                        f"{unresolved_count} socket(s) reference missing bones.",
+                    )
             log.write("Custom properties set.\n"); log.flush()
 
             # Validate armature

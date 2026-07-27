@@ -74,6 +74,7 @@ def _draw_import_neox_mesh(layout, scene, context, folder_box):
     if scene.neox_mesh_import_source == "remote":
         folder_box.label(text="Remote .gim path")
         folder_box.prop(scene, "neox_remote_gim_path", text="")
+        folder_box.prop(scene, "neox_remote_import_sockets", text="Import Sockets")
         op = folder_box.operator(
             "idvmi_neox.neox_importer",
             text="Import Remote .gim",
@@ -138,6 +139,18 @@ def _draw_export_neox_mesh(layout, scene, context, folder_box):
     layout.prop(context.scene, "flip_uv_y", text="Flip UV (Y axis)")
     layout.operator("idvmi_neox.neox_exporter", icon="EXPORT")
 
+
+def _draw_custom_gim_controls(layout, scene):
+    layout.label(text="Gim Location")
+    layout.prop(scene, "custom_gim_location", text="")
+    if scene.custom_gim_location == "remote":
+        layout.label(text="Remote Gim Path")
+        layout.prop(scene, "custom_gim_remote_path", text="")
+    elif scene.custom_gim_location == "local":
+        layout.label(text="Custom Gim File")
+        layout.prop(scene, "gim_selector", text="")
+
+
 def _draw_export_neox_mod(layout, scene, context, folder_box):
     folder_box.label(text="NeoX Export Folder")
     folder_box.prop(scene, "neox_export_selector", text="")
@@ -153,8 +166,7 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
     if context.scene.neox_rig_selector == 'custom':
         # Hunter Rig
         rig_selector = layout.box()
-        rig_selector.label(text="Reference Gim File")
-        rig_selector.prop(scene, "gim_selector", text="")    
+        _draw_custom_gim_controls(rig_selector, scene)
 
         if not use_custom_skeleton:
             rig_selector.label(text="Skeleton Path")
@@ -179,14 +191,7 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
 
         if scene.custom_gim_bool:
             rig_selector = layout.box()
-            rig_selector.label(text="Gim Location")
-            rig_selector.prop(scene, "custom_gim_location", text="")
-            if scene.custom_gim_location == "remote":
-                rig_selector.label(text="Remote Gim Path")
-                rig_selector.prop(scene, "custom_gim_remote_path", text="")
-            elif scene.custom_gim_location == "local":
-                rig_selector.label(text="Reference Gim File")
-                rig_selector.prop(scene, "gim_selector", text="")
+            _draw_custom_gim_controls(rig_selector, scene)
 
 
     mod_name = layout.box()
@@ -235,6 +240,8 @@ def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
     func = socket_dispatch.get(action)
     if func is not None:
         func(folder_box)
+
+    layout.operator("idvmi_neox.create_socket_visuals", icon="EMPTY_AXIS")
 
 # Dispatch map to replace if/elif chain
 neox_dispatch = {    

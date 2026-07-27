@@ -153,7 +153,7 @@ def register_props():
 
     bpy.types.Scene.gim_selector = bpy.props.StringProperty(
         name="Gim File Selector",
-        description="Select a .gim file",
+        description="Select a binary .gim or NeoX XML file",
         subtype='FILE_PATH',
         default=""     # .blend'e göre relatif
     )  
@@ -185,6 +185,12 @@ def register_props():
         name="Remote Gim Path",
         description="Game asset path to a .gim prefab file",
         default=""
+    )
+
+    bpy.types.Scene.neox_remote_import_sockets = bpy.props.BoolProperty(
+        name="Import Sockets",
+        description="Serialize socket metadata from the remote .gim onto the imported armature",
+        default=False
     )
 
     bpy.types.Scene.neox_animation_selector = bpy.props.StringProperty(

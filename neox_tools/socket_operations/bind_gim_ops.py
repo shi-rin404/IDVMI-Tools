@@ -1,7 +1,11 @@
 import bpy
-from ...neox_tools.utils.gim_crypt import decode_gim_file, encode_gim_file
+from ..utils.gim_crypt import decode_gim_file, encode_gim_file
 from xml.etree import ElementTree as ET
-from ...xxhash import xxhash
+
+try:
+    from ...xxhash import xxhash
+except ImportError:
+    import xxhash
 
 class IDVMI_OT_Bind_Gim(bpy.types.Operator):
     bl_idname = "idvmi_neox.bind_gim"

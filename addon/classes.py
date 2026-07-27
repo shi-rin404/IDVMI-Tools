@@ -9,7 +9,7 @@ from ..neox_tools.animation_export_ops import IDVMI_OT_Export_Neox_Animation
 from ..neox_tools.export_ops import IDVMI_OT_Export_Neox_Mesh
 from ..addon import auto_update, ui
 from ..neox_tools.mod_exporter.mod_export_ops import IDVMI_OT_Export_Neox_Mod
-from ..neox_tools.socket_operations import bind_gim_ops, copy_socket_ops
+from ..neox_tools.socket_operations import bind_gim_ops, copy_socket_ops, visualize_socket_ops
 
 # '3dm' starts with a digit, so standard relative import syntax is not valid.
 # Use importlib to load the subpackage by string name.
@@ -23,6 +23,7 @@ IDVMI_OT_Import_CB_Pose_Armature = _3dm_import_ops.IDVMI_OT_Import_CB_Pose_Armat
 classes = [
            copy_socket_ops.IDVMI_OT_Copy_Socket,
            bind_gim_ops.IDVMI_OT_Bind_Gim,
+           visualize_socket_ops.IDVMI_OT_Create_Socket_Visuals,
            ui.IDVMI_Neox_tools,
            ui.IDVMI_3DM_tools,
            auto_update.IDVMI_Update_tools,

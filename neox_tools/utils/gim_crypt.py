@@ -1,5 +1,5 @@
 from xml.etree import ElementTree as ET
-from ...neox_tools.mod_exporter.xml_converter import parse_handler, convert_handler
+from ..mod_exporter.xml_converter import parse_handler, convert_handler
 
 def decode_gim_file(gim_path:str) -> ET.Element:
     """Decodes a GIM file and returns its XML ElementTree representation."""

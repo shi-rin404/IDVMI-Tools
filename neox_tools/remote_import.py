@@ -22,10 +22,12 @@ _CRYPTOGRAPHY_INSTALL_ATTEMPTED = False
 
 @dataclass
 class RemoteMaterialPackage:
+    gim_asset_path: str
     mesh_asset_path: str
     mesh_data: bytes
     materials: list[dict[str, str]] = field(default_factory=list)
     submesh_mtl_indices: dict[int, int] = field(default_factory=dict)
+    sockets: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -83,10 +85,12 @@ def build_remote_material_package(gim_asset_path: str, cache_root: Path) -> Remo
         materials.append(material_textures)
 
     return RemoteMaterialPackage(
+        gim_asset_path=gim_asset_path,
         mesh_asset_path=mesh_asset_path,
         mesh_data=mesh_data,
         materials=materials,
         submesh_mtl_indices=_submesh_mtl_indices_from_gim(gim_root),
+        sockets=_socket_data_from_gim(gim_root),
         warnings=warnings,
     )
 
@@ -358,6 +362,50 @@ def _submesh_mtl_indices_from_gim(root: ET.Element) -> dict[int, int]:
         except ValueError:
             continue
     return result
+
+
+def _float_list(value: str) -> list[float]:
+    if not value:
+        return []
+    try:
+        return [float(part.strip()) for part in value.split(",") if part.strip()]
+    except ValueError:
+        return []
+
+
+def _socket_data_from_gim(root: ET.Element) -> list[dict]:
+    socket_objects = root.find(".//SocketObject")
+    if socket_objects is None:
+        return []
+
+    sockets: list[dict] = []
+    for element in socket_objects:
+        attributes = dict(element.attrib)
+        binding_bone = attributes.get("BindingBone", "").strip()
+
+        sockets.append(
+            {
+                "tag": element.tag,
+                "name": attributes.get("Name", ""),
+                "parent_type": "bone" if binding_bone else "armature_origin",
+                "binding_bone": binding_bone,
+                "bind_type": attributes.get("BindType", ""),
+                "binding_flag": attributes.get("BindingFlag", ""),
+                "local_position": _float_list(attributes.get("LocalPosition", "")),
+                "local_rotation_xyzw": _float_list(attributes.get("LocalRotation", "")),
+                "local_scale": _float_list(attributes.get("LocalScale", "")),
+                "attributes": attributes,
+                "objects": [
+                    {
+                        "tag": child.tag,
+                        "attributes": dict(child.attrib),
+                    }
+                    for child in element
+                ],
+            }
+        )
+
+    return sockets
 
 
 def _resolve_reference(asset_index, reference: str, base_asset_path: str) -> str:
