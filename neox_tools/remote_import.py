@@ -43,8 +43,6 @@ def build_remote_material_package(gim_asset_path: str, cache_root: Path) -> Remo
     mtg_root = _xml_root_from_bytes(asset_index.extract(mtg_asset_path).data, ".mtg", mtg_asset_path)
 
     warnings: list[str] = []
-    if _asset_finder_update_running():
-        warnings.append("Asset finder update is still running; current installed asset finder was used")
     mtl_paths = _mtl_paths_from_mtg(mtg_root)
     materials: list[dict[str, str]] = []
     for mtl_path in mtl_paths:
@@ -119,14 +117,6 @@ def _make_asset_index():
     from .asset_lookup.assets import AssetIndex
 
     return AssetIndex(_detect_game_root())
-
-
-def _asset_finder_update_running() -> bool:
-    try:
-        from ..addon import asset_finder_update
-    except Exception:
-        return False
-    return asset_finder_update.is_update_running()
 
 
 def _vendor_root() -> Path:

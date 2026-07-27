@@ -1,2 +1,1 @@
-"""FileFinderV2 package."""
-
+"""Portable FileFinder core for IDVMI-Tools."""

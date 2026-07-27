@@ -452,23 +452,3 @@ def register_props():
         name="Update Available",
         default=False
     )
-
-    bpy.types.Scene.idvmi_asset_finder_status = bpy.props.StringProperty(
-        name="Asset Finder Update Status",
-        default=""
-    )
-
-    bpy.types.Scene.idvmi_asset_finder_version = bpy.props.StringProperty(
-        name="Asset Finder Version",
-        default=""
-    )
-
-    bpy.types.Scene.idvmi_asset_finder_api_version = bpy.props.StringProperty(
-        name="Asset Finder API Version",
-        default=""
-    )
-
-    bpy.types.Scene.idvmi_asset_finder_latest_version = bpy.props.StringProperty(
-        name="Latest Asset Finder Version",
-        default=""
-    )
