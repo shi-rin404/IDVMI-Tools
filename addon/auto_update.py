@@ -269,6 +269,18 @@ class IDVMI_OT_Install_Update(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _draw_update_panel(layout, scene) -> None:
+    layout.label(text=f"Current: {_format_version(_current_version())}")
+    if scene.idvmi_update_latest_version:
+        layout.label(text=f"Latest: {scene.idvmi_update_latest_version}")
+    layout.operator("idvmi.check_update", icon="FILE_REFRESH")
+    row = layout.row()
+    row.enabled = scene.idvmi_update_available
+    row.operator("idvmi.install_update", icon="IMPORT")
+    if scene.idvmi_update_status:
+        layout.label(text=scene.idvmi_update_status)
+
+
 class IDVMI_Update_tools(bpy.types.Panel):
     bl_label = "IDVMI Updates"
     bl_idname = "idvmi_updates"
@@ -277,14 +289,15 @@ class IDVMI_Update_tools(bpy.types.Panel):
     bl_category = "IDVMI Neox"
 
     def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-        layout.label(text=f"Current: {_format_version(_current_version())}")
-        if scene.idvmi_update_latest_version:
-            layout.label(text=f"Latest: {scene.idvmi_update_latest_version}")
-        layout.operator("idvmi.check_update", icon="FILE_REFRESH")
-        row = layout.row()
-        row.enabled = scene.idvmi_update_available
-        row.operator("idvmi.install_update", icon="IMPORT")
-        if scene.idvmi_update_status:
-            layout.label(text=scene.idvmi_update_status)
+        _draw_update_panel(self.layout, context.scene)
+
+
+class IDVMI_Update_tools_Migoto(bpy.types.Panel):
+    bl_label = "IDVMI Updates"
+    bl_idname = "idvmi_updates_migoto"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "IDVMI Migoto"
+
+    def draw(self, context):
+        _draw_update_panel(self.layout, context.scene)

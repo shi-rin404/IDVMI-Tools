@@ -26,6 +26,7 @@ classes = [
            ui.IDVMI_Neox_tools,
            ui.IDVMI_3DM_tools,
            auto_update.IDVMI_Update_tools,
+           auto_update.IDVMI_Update_tools_Migoto,
            auto_update.IDVMI_OT_Check_Update,
            auto_update.IDVMI_OT_Install_Update,
            extract_frame_dump.IDVMI_OT_extract_frame_dump,

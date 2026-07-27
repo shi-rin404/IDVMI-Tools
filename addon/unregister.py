@@ -15,6 +15,7 @@ def unregister_props():
         lambda: delattr(bpy.types.Scene, "skeleton_path"),  
         lambda: delattr(bpy.types.Scene, "animconfig_location"),  
         lambda: delattr(bpy.types.Scene, "animconfig_path"),  
+        lambda: delattr(bpy.types.Scene, "skip_unnecessary_animconfig_files"),
         lambda: delattr(bpy.types.Scene, "animconfig_selector"),
         lambda: delattr(bpy.types.Scene, "gim_selector"),          
         lambda: delattr(bpy.types.Scene, "neox_rig_selector"),

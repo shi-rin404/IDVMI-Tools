@@ -167,6 +167,10 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
         if context.scene.animconfig_location == "remote":
             rig_selector.label(text="AnimConfig Path")
             rig_selector.prop(context.scene, "animconfig_path", text="")
+        elif context.scene.animconfig_location == "customize_remote":
+            rig_selector.label(text="Remote AnimConfig Path")
+            rig_selector.prop(context.scene, "animconfig_path", text="")
+            rig_selector.prop(context.scene, "skip_unnecessary_animconfig_files")
         elif context.scene.animconfig_location == "local":              
             rig_selector.label(text="AnimConfig File")
             rig_selector.prop(context.scene, "animconfig_selector", text="")

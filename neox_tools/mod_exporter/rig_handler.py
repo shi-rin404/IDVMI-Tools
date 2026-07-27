@@ -22,13 +22,24 @@ def rig_handler(export_path, context, custom_skeleton=False):
             'woman': ('chr/player/dm65_survivor_w/dm65_survivor_w.animconfig', 'chr/player/dm65_survivor_w/dm65_survivor_w.skeleton'),
             'male': ('chr/player/dm65_survivor_m/h55_survivor_m_zbs/h55_survivor_m_zbs.animconfig', 'chr/player/dm65_survivor_m/h55_survivor_m_zbs/h55_survivor_m_zbs.skeleton'),
             'little_girl': ('chr/player/dm65_survivor_girl/dm65_survivor_girl.animconfig', 'chr/player/dm65_survivor_girl/dm65_survivor_girl.skeleton'),
-            'custom': tuple(path.strip().replace("\\", "/") for path in map(bpy.path.abspath, (context.scene.animconfig_path, context.scene.skeleton_path)))
+            'custom': (
+                context.scene.animconfig_path.strip().replace("\\", "/"),
+                context.scene.skeleton_path.strip().replace("\\", "/"),
+            )
         }    
 
     res = 'res\\'
     rel_path = os.path.relpath(f"{export_path.split(res, 1)[0]}{res}", export_path)
 
-    if context.scene.neox_rig_selector != 'custom' or context.scene.animconfig_location == "remote":
+    if context.scene.neox_rig_selector == 'custom' and context.scene.animconfig_location == "customize_remote":
+        from .animconfig_localizer import localize_remote_animconfig
+
+        animconfig_path = localize_remote_animconfig(
+            context.scene.animconfig_path,
+            export_path,
+            skip_unnecessary_files=context.scene.skip_unnecessary_animconfig_files,
+        )
+    elif context.scene.neox_rig_selector != 'custom' or context.scene.animconfig_location == "remote":
         animconfig_path = rig_path_lib[context.scene.neox_rig_selector][0]
         animconfig_path = os.path.join(rel_path, animconfig_path).replace("\\", "/")
     elif context.scene.animconfig_location == "local":

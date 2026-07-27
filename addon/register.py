@@ -134,9 +134,16 @@ def register_props():
         items=[            
             ('remote', "Remote File", "Official animations"),
             ('local', "Local File", "Local animations"),
+            ('customize_remote', "Customize Remote File", "Copy and localize a remote animconfig"),
         ],
         default='remote'
     )    
+
+    bpy.types.Scene.skip_unnecessary_animconfig_files = bpy.props.BoolProperty(
+        name="Skip Unnecessary Files",
+        description="Only write the local animconfig and point animations to remote relative paths",
+        default=True
+    )
 
     bpy.types.Scene.skeleton_path = bpy.props.StringProperty(
         name="Skeleton File Path",
