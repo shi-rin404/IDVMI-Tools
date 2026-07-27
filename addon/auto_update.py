@@ -66,7 +66,7 @@ def _parse_version(value) -> tuple[int, ...]:
     if text.startswith(("v", "V")):
         text = text[1:]
     parts = []
-    for part in text.replace("-", ".").split("."):
+    for part in text.replace("-", ".").replace("_", ".").split("."):
         if not part.isdigit():
             break
         parts.append(int(part))
