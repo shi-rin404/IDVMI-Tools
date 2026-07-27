@@ -219,40 +219,42 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
     layout.operator("idvmi_neox.neox_mod_exporter", icon="EXPORT")
 
 def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
-    layout.prop(context.scene, "socket_action_selector", text="Socket Action")        
+    layout.label(text="Action")
+    layout.prop(context.scene, "socket_action_selector", text="")
 
     folder_box = layout.box()
-    def bind_gim_to_socket(_folder_box_):
-        _folder_box_.label(text="Gim File")
-        _folder_box_.prop(scene, "socket_default_gim_selector", text="")
-        _folder_box_.label(text="Socket Name")
-        _folder_box_.prop(scene, "default_socket_name", text="")
-        _folder_box_.label(text="Gim Path")
-        _folder_box_.prop(scene, "gim_path", text="")
-        
-        layout.operator("idvmi_neox.bind_gim", icon="MODIFIER")
-
-    def copy_socket(_folder_box_):
-        _folder_box_.label(text="From (Gim File)")
-        _folder_box_.prop(scene, "socket_source_gim_selector", text="")
-        _folder_box_.label(text="To (Gim File)")
-        _folder_box_.prop(scene, "socket_default_gim_selector", text="")
-        _folder_box_.label(text="Socket Name")
-        _folder_box_.prop(scene, "default_socket_name", text="")
-
-        layout.operator("idvmi_neox.copy_socket", icon="MODIFIER")
-
-    socket_dispatch = {
-        'bind_gim': bind_gim_to_socket,
-        'copy_socket': copy_socket
-    }
-
     action = context.scene.socket_action_selector
-    func = socket_dispatch.get(action)
-    if func is not None:
-        func(folder_box)
 
-    layout.operator("idvmi_neox.create_socket_visuals", icon="EMPTY_AXIS")
+    if action == "copy_socket":
+        folder_box.label(
+            text=(
+                "Have both models imported. Select source socket first, then "
+                "select target armature. Proceed."
+            )
+        )
+        folder_box.operator("idvmi_neox.copy_socket_visual", text="Copy Socket", icon="COPYDOWN")
+    elif action == "create_socket":
+        folder_box.label(text="Socket Location:")
+        folder_box.prop(scene, "socket_create_location", text="")
+        if scene.socket_create_location == "object_origin":
+            folder_box.label(
+                text=(
+                    "Switch to Pose Mode. Select the source object from Scene Collection. "
+                    "Select the binding bone from 3D Viewport (If you don't select any bone, "
+                    "it will bind to armature). Confirm."
+                )
+            )
+        else:
+            folder_box.label(
+                text=(
+                    "Switch to Pose Mode. Select the binding bone. Set the cursor binding "
+                    "position. Confirm."
+                )
+            )
+        folder_box.operator("idvmi_neox.create_socket", text="Confirm", icon="EMPTY_AXIS")
+    elif action == "delete_socket":
+        folder_box.label(text="Select the socket. Confirm.")
+        folder_box.operator("idvmi_neox.delete_socket", text="Delete Socket", icon="TRASH")
 
 # Dispatch map to replace if/elif chain
 neox_dispatch = {    

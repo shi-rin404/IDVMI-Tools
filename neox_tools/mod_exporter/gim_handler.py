@@ -7,6 +7,77 @@ ENCODE_GIM_FILE = False
 import os
 import xml.etree.ElementTree as ET
 from .xml_converter import parse_handler, convert_handler, io_handler
+from ..socket_operations.visualize_socket_ops import (
+    custom_sockets_for_export,
+    deleting_sockets_for_export,
+)
+
+
+def _next_socket_index(socket_objects: ET.Element) -> int:
+    max_index = -1
+    for child in socket_objects:
+        _prefix, separator, suffix = child.tag.rpartition("_")
+        if separator and suffix.isdigit():
+            max_index = max(max_index, int(suffix))
+    return max_index + 1
+
+
+def _append_custom_sockets(decoded_gim_data: ET.Element, armature) -> int:
+    custom_sockets = custom_sockets_for_export(armature)
+    if not custom_sockets:
+        return 0
+
+    socket_objects = decoded_gim_data.find("SocketObject")
+    if socket_objects is None:
+        socket_objects = ET.SubElement(decoded_gim_data, "SocketObject")
+
+    socket_index = _next_socket_index(socket_objects)
+    for socket in custom_sockets:
+        attributes = dict(socket.get("attributes", {}))
+        binding_bone = str(socket.get("binding_bone", "")).strip()
+        attributes["BindingBone"] = binding_bone
+        attributes.setdefault("Name", str(socket.get("name", "")).strip() or f"Socket_{socket_index}")
+        attributes.setdefault("BindType", str(socket.get("bind_type", "7")))
+        attributes.setdefault("BindingFlag", str(socket.get("binding_flag", "2")))
+        attributes.setdefault("PlayRatePolicy", "1")
+        attributes.setdefault("PreloadingLevel", "4294967295")
+        attributes.setdefault("SubmeshSortIdx", "4294967295")
+        attributes.setdefault("SyncVo", "false")
+
+        socket_element = ET.SubElement(
+            socket_objects,
+            f"Socket_{socket_index}",
+            attributes,
+        )
+        socket_index += 1
+
+        for child in socket.get("objects", []):
+            child_tag = str(child.get("tag", "Object") or "Object")
+            child_attributes = dict(child.get("attributes", {}))
+            ET.SubElement(socket_element, child_tag, child_attributes)
+
+    return len(custom_sockets)
+
+
+def _delete_marked_sockets(decoded_gim_data: ET.Element, armature) -> int:
+    deleting = deleting_sockets_for_export(armature)
+    if not deleting:
+        return 0
+
+    socket_objects = decoded_gim_data.find("SocketObject")
+    if socket_objects is None:
+        return 0
+
+    deleted = 0
+    for socket_element in list(socket_objects):
+        socket_name = str(socket_element.attrib.get("Name", "")).strip()
+        binding_bone = str(socket_element.attrib.get("BindingBone", "")).strip()
+        if (binding_bone, socket_name) in deleting:
+            socket_objects.remove(socket_element)
+            deleted += 1
+
+    return deleted
+
 
 def gim_handler(export_path:str, rig_info:dict, armature):
     # element_tags, attribute_map = parse_handler.parseCustomBinFormat(rig_info["gim"])
@@ -29,6 +100,8 @@ def gim_handler(export_path:str, rig_info:dict, armature):
     # Rig
     decoded_gim_data.find("SkeletonFile").find("FileName").attrib["Value"] = rig_info["skeleton"]
     decoded_gim_data.find("AnimationConfigFile").find("FileName").attrib["Value"] = rig_info["animconfig"]
+    _delete_marked_sockets(decoded_gim_data, armature)
+    _append_custom_sockets(decoded_gim_data, armature)
     
     if ENCODE_GIM_FILE:
         io_handler.ExportGim(

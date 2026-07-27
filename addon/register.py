@@ -33,22 +33,26 @@ def set_neox_animation_export_loop(scene, value):
 
 
 def register_props():
-    bpy.types.Scene.socket_source_gim_selector = bpy.props.StringProperty(
-        name="Source Gim File Selector",
-        description="Select a .gim file",
-        subtype='FILE_PATH',
-        default=""     # .blend'e göre relatif
+    bpy.types.Scene.socket_action_selector = bpy.props.EnumProperty(
+        name="Action",
+        description="Select your socket action",
+        items=[
+            ('copy_socket', "Copy Socket", "Copy a visual socket to the target armature"),
+            ('create_socket', "Create Socket", "Create a socket from an object origin or cursor"),
+            ('delete_socket', "Delete Socket", "Delete the selected visual socket"),
+        ],
+        default='copy_socket'
     )
 
-    bpy.types.Scene.socket_action_selector = bpy.props.EnumProperty(
-        name="Socket Action Selector",
-        description="Select your socket action",
-        items=[            
-            ('bind_gim', "Bind Gim", "Bind your gim to a specific socket"),
-            ('copy_socket', "Copy Socket", "Copy a socket from another gim"),
+    bpy.types.Scene.socket_create_location = bpy.props.EnumProperty(
+        name="Socket Location",
+        description="Select where the new socket should be created from",
+        items=[
+            ('object_origin', "Object Origin", "Use the selected object's world transform"),
+            ('cursor', "Cursor", "Use the 3D cursor location"),
         ],
-        default='bind_gim'
-    )  
+        default='object_origin'
+    )
 
     bpy.types.Scene.custom_gim_bool = bpy.props.BoolProperty(
         name="Custom Gim",
@@ -76,25 +80,6 @@ def register_props():
         name="Export with Custom Skeleton",
         description="Generate and bind a custom .skeleton during NeoX mod export",
         default=False
-    )
-
-    bpy.types.Scene.gim_path = bpy.props.StringProperty(
-        name="Gim File Path",
-        description="Insert the gim path of your character. You can use forward or backward slash.",
-        default=""
-    )
-
-    bpy.types.Scene.default_socket_name = bpy.props.StringProperty(
-        name="Socket Name",
-        description="Name of your socket",
-        default=""
-    )
-
-    bpy.types.Scene.socket_default_gim_selector = bpy.props.StringProperty(
-        name="Gim File Selector",
-        description="Select a .gim file",
-        subtype='FILE_PATH',
-        default=""     # .blend'e göre relatif
     )
 
     bpy.types.Scene.neox_rig_selector = bpy.props.EnumProperty(

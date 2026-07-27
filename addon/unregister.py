@@ -2,14 +2,11 @@ import bpy
 
 def unregister_props():
     unregister = [
-        lambda: delattr(bpy.types.Scene, "socket_source_gim_selector"),
         lambda: delattr(bpy.types.Scene, "socket_action_selector"),
+        lambda: delattr(bpy.types.Scene, "socket_create_location"),
         lambda: delattr(bpy.types.Scene, "custom_gim_bool"),
         lambda: delattr(bpy.types.Scene, "custom_gim_location"),
         lambda: delattr(bpy.types.Scene, "custom_gim_remote_path"),
-        lambda: delattr(bpy.types.Scene, "gim_path"),
-        lambda: delattr(bpy.types.Scene, "default_socket_name"),         
-        lambda: delattr(bpy.types.Scene, "socket_default_gim_selector"),
         lambda: delattr(bpy.types.Scene, "neox_mod_export_custom_skeleton"),
         lambda: delattr(bpy.types.Scene, "neox_mod_name"),
         lambda: delattr(bpy.types.Scene, "skeleton_path"),  
