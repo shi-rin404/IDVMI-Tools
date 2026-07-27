@@ -632,6 +632,42 @@ def _serialize_remote_sockets(armature_obj, package: RemoteMaterialPackage, log)
     return len(unresolved_sockets)
 
 
+def _select_active_armature(armature_obj) -> None:
+    try:
+        if bpy.context.object is not None and bpy.context.object.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+    except Exception:
+        pass
+
+    try:
+        bpy.ops.object.select_all(action='DESELECT')
+    except Exception:
+        pass
+
+    armature_obj.select_set(True)
+    bpy.context.view_layer.objects.active = armature_obj
+    bpy.context.view_layer.update()
+
+
+def _create_socket_visuals_for_imported_armature(armature_obj, operator, log) -> None:
+    from .socket_operations.visualize_socket_ops import create_socket_visuals_for_armature
+
+    _select_active_armature(armature_obj)
+    marker_count, collection_name = create_socket_visuals_for_armature(
+        bpy.context,
+        armature_obj,
+        lambda message: operator.report({'WARNING'}, message),
+    )
+    log.write(
+        f"Created {marker_count} socket visual marker(s) in {collection_name}.\n"
+    )
+    log.flush()
+    operator.report(
+        {'INFO'},
+        f"Created {marker_count} socket visual marker(s) in {collection_name}",
+    )
+
+
 def import_per_material(
     model,
     obj_name: str,
@@ -1250,6 +1286,21 @@ def import_per_material(
 
 
         log.write(f"--- Successfully imported model: {obj_name} ---\n\n"); log.flush()
+        if import_sockets and remote_material_package is not None:
+            try:
+                _create_socket_visuals_for_imported_armature(
+                    armature_obj,
+                    operator,
+                    log,
+                )
+            except Exception as e:
+                log.write(f"Socket visual creation failed: {e}\n")
+                log.flush()
+                operator.report(
+                    {'WARNING'},
+                    f"Socket visual creation failed: {e}",
+                )
+
         print(f"Successfully imported model: {obj_name}")
         # return armature_obj
         return True

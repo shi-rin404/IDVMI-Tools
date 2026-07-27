@@ -43,6 +43,50 @@ def _remove_collection_tree(collection) -> None:
     bpy.data.collections.remove(collection)
 
 
+def _collection_contains(root_collection, target_collection) -> bool:
+    if root_collection == target_collection:
+        return True
+    return any(
+        _collection_contains(child, target_collection)
+        for child in root_collection.children
+    )
+
+
+def _find_layer_collection(layer_collection, target_collection):
+    if layer_collection.collection == target_collection:
+        return layer_collection
+    for child in layer_collection.children:
+        found = _find_layer_collection(child, target_collection)
+        if found is not None:
+            return found
+    return None
+
+
+def _ensure_layer_collection_visible(context, collection) -> None:
+    context.view_layer.update()
+    layer_collection = _find_layer_collection(
+        context.view_layer.layer_collection,
+        collection,
+    )
+    if layer_collection is None:
+        return
+    layer_collection.exclude = False
+    layer_collection.hide_viewport = False
+
+
+def _parent_collection_for(context, armature_obj):
+    scene_root = context.scene.collection
+
+    for collection in armature_obj.users_collection:
+        if _collection_contains(scene_root, collection):
+            return collection
+
+    if context.collection and _collection_contains(scene_root, context.collection):
+        return context.collection
+
+    return scene_root
+
+
 def _create_root_collection(context, armature_obj):
     collection_name = _collection_name_for(armature_obj)
     existing = bpy.data.collections.get(collection_name)
@@ -50,7 +94,11 @@ def _create_root_collection(context, armature_obj):
         _remove_collection_tree(existing)
 
     collection = bpy.data.collections.new(collection_name)
-    context.scene.collection.children.link(collection)
+    collection.hide_viewport = False
+    collection.hide_render = True
+    parent_collection = _parent_collection_for(context, armature_obj)
+    parent_collection.children.link(collection)
+    _ensure_layer_collection_visible(context, collection)
     return collection
 
 
@@ -121,6 +169,9 @@ def _new_marker(collection, armature_obj, socket: dict, index: int, bone_name: s
     marker = bpy.data.objects.new(marker_name, None)
     marker.empty_display_type = "ARROWS"
     marker.empty_display_size = 0.35
+    marker.hide_viewport = False
+    marker.hide_select = False
+    marker.hide_render = True
     marker.matrix_world = _socket_marker_matrix(armature_obj, socket, bone_name)
     marker["NeoX:SocketName"] = socket_name
     marker["NeoX:SocketBindingBone"] = bone_name
@@ -128,6 +179,55 @@ def _new_marker(collection, armature_obj, socket: dict, index: int, bone_name: s
     marker["NeoX:Socket"] = json.dumps(socket, ensure_ascii=False, separators=(",", ":"))
     collection.objects.link(marker)
     return marker
+
+
+def _socket_groups_for_armature(armature_obj):
+    root_sockets = _load_socket_list(armature_obj, "NeoX:RootSockets")
+    bound_sockets_by_bone = []
+
+    for pbone in armature_obj.pose.bones:
+        sockets = _load_socket_list(pbone, "NeoX:Sockets")
+        if sockets:
+            bound_sockets_by_bone.append((pbone.name, sockets))
+
+    return root_sockets, bound_sockets_by_bone
+
+
+def create_socket_visuals_for_armature(context, armature_obj, report_warning=None):
+    root_sockets, bound_sockets_by_bone = _socket_groups_for_armature(armature_obj)
+    if not root_sockets and not bound_sockets_by_bone:
+        raise ValueError("Armature has no serialized NeoX socket data")
+
+    root_collection = _create_root_collection(context, armature_obj)
+    marker_count = 0
+
+    for socket in root_sockets:
+        _new_marker(root_collection, armature_obj, socket, marker_count)
+        marker_count += 1
+
+    for bone_name, sockets in bound_sockets_by_bone:
+        bone_collection = bpy.data.collections.new(_safe_name(bone_name, "Bone"))
+        bone_collection.hide_viewport = False
+        bone_collection.hide_render = True
+        root_collection.children.link(bone_collection)
+        _ensure_layer_collection_visible(context, bone_collection)
+        for socket in sockets:
+            try:
+                _new_marker(
+                    bone_collection,
+                    armature_obj,
+                    socket,
+                    marker_count,
+                    bone_name,
+                )
+            except KeyError:
+                if report_warning is not None:
+                    report_warning(f"Socket parent bone not found: {bone_name}")
+                continue
+            marker_count += 1
+
+    context.view_layer.update()
+    return marker_count, root_collection.name
 
 
 class IDVMI_OT_Create_Socket_Visuals(bpy.types.Operator):
@@ -141,44 +241,18 @@ class IDVMI_OT_Create_Socket_Visuals(bpy.types.Operator):
 
     def execute(self, context):
         armature_obj = context.object
-        root_sockets = _load_socket_list(armature_obj, "NeoX:RootSockets")
-
-        bound_sockets_by_bone = []
-        for pbone in armature_obj.pose.bones:
-            sockets = _load_socket_list(pbone, "NeoX:Sockets")
-            if sockets:
-                bound_sockets_by_bone.append((pbone.name, sockets))
-
-        if not root_sockets and not bound_sockets_by_bone:
+        try:
+            marker_count, collection_name = create_socket_visuals_for_armature(
+                context,
+                armature_obj,
+                lambda message: self.report({"WARNING"}, message),
+            )
+        except ValueError:
             self.report({"ERROR"}, "Active armature has no serialized NeoX socket data")
             return {"CANCELLED"}
 
-        root_collection = _create_root_collection(context, armature_obj)
-        marker_count = 0
-
-        for socket in root_sockets:
-            _new_marker(root_collection, armature_obj, socket, marker_count)
-            marker_count += 1
-
-        for bone_name, sockets in bound_sockets_by_bone:
-            bone_collection = bpy.data.collections.new(_safe_name(bone_name, "Bone"))
-            root_collection.children.link(bone_collection)
-            for socket in sockets:
-                try:
-                    _new_marker(
-                        bone_collection,
-                        armature_obj,
-                        socket,
-                        marker_count,
-                        bone_name,
-                    )
-                except KeyError:
-                    self.report(
-                        {"WARNING"},
-                        f"Socket parent bone not found: {bone_name}",
-                    )
-                    continue
-                marker_count += 1
-
-        self.report({"INFO"}, f"Created {marker_count} socket visual marker(s)")
+        self.report(
+            {"INFO"},
+            f"Created {marker_count} socket visual marker(s) in {collection_name}",
+        )
         return {"FINISHED"}
