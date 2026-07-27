@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import importlib
 import importlib.util
 import json
@@ -21,7 +22,8 @@ GITHUB_REPO = "shi-rin404/BarbieAssetFinder"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 USER_AGENT = "IDVMI-Asset-Finder-Updater"
 SUPPORTED_API_VERSION = 1
-ASSET_PREFIX = "idvmi-asset-finder-"
+ASSET_PREFIX = "idvmi-api-"
+LEGACY_ASSET_PREFIX = "idvmi-asset-finder-"
 
 _UPDATE_LOCK = threading.Lock()
 _STATUS_LOCK = threading.Lock()
@@ -34,6 +36,7 @@ _PENDING_STATE: dict[str, str] | None = None
 class ReleaseAsset:
     name: str
     url: str
+    manifest_nested_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -79,11 +82,27 @@ def _request_json(url: str) -> dict:
     return json.loads(_request_bytes(url, timeout=20).decode("utf-8"))
 
 
-def _download_file(url: str, target_path: Path) -> None:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        with target_path.open("wb") as output:
-            shutil.copyfileobj(response, output)
+def _asset_bytes(asset: ReleaseAsset, timeout: int = 120) -> bytes:
+    return _request_bytes(asset.url, timeout)
+
+
+def _zip_payload_sha256(archive_path: Path, manifest_name: str = "") -> str:
+    digest = hashlib.sha256()
+    with zipfile.ZipFile(archive_path) as archive:
+        names = sorted(
+            name
+            for name in archive.namelist()
+            if not name.endswith("/")
+            and name != manifest_name
+            and "__pycache__" not in Path(name).parts
+            and Path(name).suffix not in {".pyc", ".pyo"}
+        )
+        for name in names:
+            digest.update(name.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(archive.read(name))
+            digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _parse_version(value) -> tuple[int, ...]:
@@ -142,7 +161,8 @@ def _select_manifest_asset(assets: list[ReleaseAsset]) -> ReleaseAsset:
     candidates = [
         asset
         for asset in assets
-        if asset.name.lower().startswith(ASSET_PREFIX) and asset.name.lower().endswith(".json")
+        if asset.name.lower().startswith((ASSET_PREFIX, LEGACY_ASSET_PREFIX))
+        and asset.name.lower().endswith(".json")
     ]
     if not candidates:
         raise ValueError("Latest release does not include an IDVMI asset finder manifest")
@@ -157,11 +177,46 @@ def _select_archive_asset(assets: list[ReleaseAsset], manifest: AssetFinderManif
     candidates = [
         asset
         for asset in assets
-        if asset.name.lower().startswith(ASSET_PREFIX) and asset.name.lower().endswith(".zip")
+        if asset.name.lower().startswith((ASSET_PREFIX, LEGACY_ASSET_PREFIX))
+        and asset.name.lower().endswith(".zip")
     ]
     if not candidates:
         raise ValueError("Latest release does not include an IDVMI asset finder zip")
     return sorted(candidates, key=lambda item: item.name)[-1]
+
+
+def _select_embedded_archive_asset(assets: list[ReleaseAsset]) -> ReleaseAsset | None:
+    candidates = [
+        asset
+        for asset in assets
+        if asset.name.lower().startswith(ASSET_PREFIX) and asset.name.lower().endswith(".zip")
+    ]
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: item.name)[-1]
+
+
+def _embedded_manifest_member(archive: zipfile.ZipFile, archive_name: str) -> str | None:
+    expected = f"{Path(archive_name).stem}.json"
+    names = [
+        name
+        for name in archive.namelist()
+        if not name.endswith("/")
+        and Path(name).name.lower().startswith((ASSET_PREFIX, LEGACY_ASSET_PREFIX))
+        and Path(name).name.lower().endswith(".json")
+    ]
+    for name in names:
+        if Path(name).name == expected:
+            return name
+    return sorted(names)[-1] if names else None
+
+
+def _manifest_from_archive_bytes(data: bytes, archive_name: str) -> tuple[AssetFinderManifest, str]:
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        manifest_member = _embedded_manifest_member(archive, archive_name)
+        if manifest_member is None:
+            raise ValueError("IDVMI API zip does not include an embedded manifest")
+        return _parse_manifest(archive.read(manifest_member)), manifest_member
 
 
 def _parse_manifest(data: bytes) -> AssetFinderManifest:
@@ -185,6 +240,21 @@ def _parse_manifest(data: bytes) -> AssetFinderManifest:
 def _fetch_latest_asset_finder_release() -> tuple[dict, AssetFinderManifest, ReleaseAsset]:
     release = _request_json(LATEST_RELEASE_API)
     assets = _release_assets(release)
+    archive_asset = _select_embedded_archive_asset(assets)
+    if archive_asset is not None:
+        try:
+            manifest, manifest_member = _manifest_from_archive_bytes(
+                _asset_bytes(archive_asset),
+                archive_asset.name,
+            )
+            return release, manifest, ReleaseAsset(
+                name=archive_asset.name,
+                url=archive_asset.url,
+                manifest_nested_path=manifest_member,
+            )
+        except Exception:
+            pass
+
     manifest_asset = _select_manifest_asset(assets)
     manifest = _parse_manifest(_request_bytes(manifest_asset.url, timeout=20))
     archive_asset = _select_archive_asset(assets, manifest)
@@ -399,8 +469,12 @@ def install_latest_asset_finder_release(scene) -> tuple[str, bool]:
         temp_root = Path(temp_dir)
         archive_path = temp_root / manifest.archive_name
         extract_root = temp_root / "extract"
-        _download_file(archive_asset.url, archive_path)
-        actual_sha256 = _sha256(archive_path)
+        archive_path.write_bytes(_asset_bytes(archive_asset))
+        actual_sha256 = (
+            _zip_payload_sha256(archive_path, archive_asset.manifest_nested_path)
+            if archive_asset.manifest_nested_path
+            else _sha256(archive_path)
+        )
         if actual_sha256 != manifest.sha256:
             raise ValueError(
                 f"Asset finder checksum mismatch: expected {manifest.sha256}, got {actual_sha256}"
