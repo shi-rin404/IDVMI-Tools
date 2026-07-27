@@ -166,18 +166,30 @@ def _socket_marker_matrix(armature_obj, socket: dict, bone_name: str = "") -> Ma
 def _new_marker(collection, armature_obj, socket: dict, index: int, bone_name: str = ""):
     socket_name = str(socket.get("name", "")).strip()
     marker_name = f"Socket_{index:03d}_{_safe_name(socket_name, 'Unnamed')}"
+    marker_matrix = _socket_marker_matrix(armature_obj, socket, bone_name)
     marker = bpy.data.objects.new(marker_name, None)
     marker.empty_display_type = "ARROWS"
     marker.empty_display_size = 0.35
     marker.hide_viewport = False
     marker.hide_select = False
     marker.hide_render = True
-    marker.matrix_world = _socket_marker_matrix(armature_obj, socket, bone_name)
+    marker.matrix_world = marker_matrix
     marker["NeoX:SocketName"] = socket_name
     marker["NeoX:SocketBindingBone"] = bone_name
     marker["NeoX:SocketParentType"] = "bone" if bone_name else "armature_origin"
     marker["NeoX:Socket"] = json.dumps(socket, ensure_ascii=False, separators=(",", ":"))
     collection.objects.link(marker)
+
+    if bone_name:
+        marker.parent = armature_obj
+        marker.parent_type = "BONE"
+        marker.parent_bone = bone_name
+        marker.matrix_world = marker_matrix
+    else:
+        marker.parent = armature_obj
+        marker.matrix_parent_inverse = armature_obj.matrix_world.inverted_safe()
+        marker.matrix_world = marker_matrix
+
     return marker
 
 

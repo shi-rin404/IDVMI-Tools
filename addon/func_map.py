@@ -75,6 +75,17 @@ def _draw_import_neox_mesh(layout, scene, context, folder_box):
         folder_box.label(text="Remote .gim path")
         folder_box.prop(scene, "neox_remote_gim_path", text="")
         folder_box.prop(scene, "neox_remote_import_sockets", text="Import Sockets")
+        if scene.neox_remote_import_sockets:
+            folder_box.prop(scene, "neox_socket_filters_enabled", text="Socket Filters")
+            if scene.neox_socket_filters_enabled:
+                socket_filters = folder_box.box()
+                socket_filters.label(text="Socket Filters")
+                socket_filters.label(text="Bone Name")
+                socket_filters.prop(scene, "neox_socket_filter_bone_names", text="")
+                socket_filters.label(text="Socket Name")
+                socket_filters.label(text="Match type:")
+                socket_filters.prop(scene, "neox_socket_filter_socket_match_type", text="")
+                socket_filters.prop(scene, "neox_socket_filter_socket_names", text="")
         op = folder_box.operator(
             "idvmi_neox.neox_importer",
             text="Import Remote .gim",

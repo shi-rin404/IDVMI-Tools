@@ -576,10 +576,72 @@ def _delete_custom_properties(id_owner, property_names: tuple[str, ...]) -> None
             del id_owner[property_name]
 
 
-def _serialize_remote_sockets(armature_obj, package: RemoteMaterialPackage, log) -> int:
+def _socket_filter_values(value: str) -> set[str]:
+    return {
+        item.lower()
+        for item in str(value or "").split(",")
+        if item != ""
+    }
+
+
+def _socket_matches_filters(
+    socket: dict,
+    bone_filters: set[str],
+    socket_filters: set[str],
+    socket_match_type: str,
+) -> bool:
+    binding_bone = str(socket.get("binding_bone", "")).lower()
+    socket_name = str(socket.get("name", "")).lower()
+    if bone_filters and binding_bone not in bone_filters:
+        return False
+    if socket_filters:
+        if socket_match_type == "exact":
+            return socket_name in socket_filters
+        return any(value in socket_name for value in socket_filters)
+    return True
+
+
+def _filtered_sockets(
+    package: RemoteMaterialPackage,
+    filters_enabled: bool,
+    bone_filter_text: str,
+    socket_filter_text: str,
+    socket_match_type: str,
+) -> list[dict]:
+    if not filters_enabled:
+        return package.sockets
+
+    bone_filters = _socket_filter_values(bone_filter_text)
+    socket_filters = _socket_filter_values(socket_filter_text)
+    if not bone_filters and not socket_filters:
+        return package.sockets
+    return [
+        socket
+        for socket in package.sockets
+        if _socket_matches_filters(socket, bone_filters, socket_filters, socket_match_type)
+    ]
+
+
+def _serialize_remote_sockets(
+    armature_obj,
+    package: RemoteMaterialPackage,
+    log,
+    *,
+    filters_enabled: bool = True,
+    bone_filter_text: str = "",
+    socket_filter_text: str = "",
+    socket_match_type: str = "contains",
+) -> int:
     root_sockets = []
     unresolved_sockets = []
     sockets_by_bone: dict[str, list[dict]] = {}
+    sockets = _filtered_sockets(
+        package,
+        filters_enabled,
+        bone_filter_text,
+        socket_filter_text,
+        socket_match_type,
+    )
 
     for pbone in armature_obj.pose.bones:
         _delete_custom_properties(
@@ -602,7 +664,7 @@ def _serialize_remote_sockets(armature_obj, package: RemoteMaterialPackage, log)
         ),
     )
 
-    for socket in package.sockets:
+    for socket in sockets:
         binding_bone = str(socket.get("binding_bone", "")).strip()
         if not binding_bone:
             root_sockets.append(socket)
@@ -626,7 +688,8 @@ def _serialize_remote_sockets(armature_obj, package: RemoteMaterialPackage, log)
     log.write(
         "Serialized NeoX sockets: "
         f"bound={sum(len(items) for items in sockets_by_bone.values())}, "
-        f"root={len(root_sockets)}, unresolved={len(unresolved_sockets)}.\n"
+        f"root={len(root_sockets)}, unresolved={len(unresolved_sockets)}, "
+        f"filtered_out={len(package.sockets) - len(sockets)}.\n"
     )
     log.flush()
     return len(unresolved_sockets)
@@ -1072,6 +1135,10 @@ def import_per_material(
                     armature_obj,
                     remote_material_package,
                     log,
+                    filters_enabled=bpy.context.scene.neox_socket_filters_enabled,
+                    bone_filter_text=bpy.context.scene.neox_socket_filter_bone_names,
+                    socket_filter_text=bpy.context.scene.neox_socket_filter_socket_names,
+                    socket_match_type=bpy.context.scene.neox_socket_filter_socket_match_type,
                 )
                 if unresolved_count:
                     operator.report(

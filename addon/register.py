@@ -178,7 +178,7 @@ def register_props():
             ('remote', "Remote file", "Import from a game asset .gim path"),
             ('local', "Local file", "Import from a local .mesh file"),
         ],
-        default='local'
+        default='remote'
     )
 
     bpy.types.Scene.neox_remote_gim_path = bpy.props.StringProperty(
@@ -191,6 +191,40 @@ def register_props():
         name="Import Sockets",
         description="Serialize socket metadata from the remote .gim onto the imported armature",
         default=False
+    )
+
+    bpy.types.Scene.neox_socket_filters_enabled = bpy.props.BoolProperty(
+        name="Socket Filters",
+        description="Filter imported socket metadata by bone or socket name",
+        default=True
+    )
+
+    bpy.types.Scene.neox_socket_filter_bone_names = bpy.props.StringProperty(
+        name="Bone Name",
+        description=(
+            "Split bone names by using comma (,). Space character will also "
+            "consider as bone name. Case insensitive."
+        ),
+        default=""
+    )
+
+    bpy.types.Scene.neox_socket_filter_socket_names = bpy.props.StringProperty(
+        name="Socket Name",
+        description=(
+            "Split socket names by using comma (,). Space character will also "
+            "consider as socket name. Case insensitive."
+        ),
+        default=""
+    )
+
+    bpy.types.Scene.neox_socket_filter_socket_match_type = bpy.props.EnumProperty(
+        name="Socket Match Type",
+        description="How socket name filters should be matched",
+        items=[
+            ('contains', "Contains text", "Match sockets containing the text"),
+            ('exact', "Exact name", "Match sockets with the exact name"),
+        ],
+        default='contains'
     )
 
     bpy.types.Scene.neox_animation_selector = bpy.props.StringProperty(
