@@ -39,6 +39,14 @@ def _load_skeleton_exporter_module():
         return module
 
 
+def _safe_asset_stem(value: str) -> str:
+    stem = "".join(
+        char if char.isalnum() or char in ("_", "-") else "_"
+        for char in str(value).strip()
+    ).strip("_")
+    return stem or "mod"
+
+
 def _validate_armature_matches_imported_bone_order(armature):
     if "NeoX:BoneOrder" not in armature:
         raise ValueError(
@@ -111,6 +119,7 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
                 export_path = os.path.join(export_path, context.scene.neox_mod_name)
             
             os.makedirs(export_path, exist_ok=True)
+            asset_stem = _safe_asset_stem(context.scene.neox_mod_name)
 
             arm_obj = get_armature(context, self)
             if not arm_obj:
@@ -137,7 +146,7 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
                 return {'CANCELLED'}
 
             if not export_neox_mesh(
-                bpy.path.abspath(os.path.join(export_path, "main.mesh")),
+                bpy.path.abspath(os.path.join(export_path, f"{asset_stem}.mesh")),
                 mesh_data,
                 arm_obj,
                 self,
@@ -146,7 +155,7 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
                 return {'CANCELLED'}
 
             # Export Textures
-            if not texture_handler(export_path, context, self):
+            if not texture_handler(export_path, context, self, asset_stem):
                 return {'CANCELLED'}
 
             if custom_skeleton:
@@ -161,18 +170,19 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
                 gim_path = gim_handler(
                     export_path,
                     rig_handler(export_path, context, custom_skeleton=custom_skeleton),
-                    arm_obj
+                    arm_obj,
+                    asset_stem
                 )
             except Exception as exc:
                 log.write(f"ERROR: Gim export failed: {exc}\n"); log.flush()
                 self.report({'ERROR'}, f"Gim export failed: {exc}")
                 return {'CANCELLED'}
 
-            # Create mod.json
-            mod_json_maker(
-                gim_path,
-                context
-            )
+            if context.scene.neox_mod_export_create_mod_json:
+                mod_json_maker(
+                    gim_path,
+                    context
+                )
 
             self.report({'INFO'}, f"Export OK → {export_path}")
             return {'FINISHED'}

@@ -6,6 +6,7 @@ import math
 import os
 import struct
 from dataclasses import dataclass
+from pathlib import Path
 from typing import BinaryIO, Sequence
 
 import bpy
@@ -108,6 +109,11 @@ class IDVMI_OT_Import_Neox_Animation(bpy.types.Operator, ImportHelper):
         options={"HIDDEN"},
     )
 
+    import_source: StringProperty(
+        default="local",
+        options={"HIDDEN"},
+    )
+
     def invoke(self, context, event):
         if self.use_scene_selector:
             return self.execute(context)
@@ -117,16 +123,36 @@ class IDVMI_OT_Import_Neox_Animation(bpy.types.Operator, ImportHelper):
         return {"RUNNING_MODAL"}
 
     def execute(self, context):
-        animation_path = self.filepath or context.scene.neox_animation_selector
-        animation_path = bpy.path.abspath(animation_path)
+        import_source = self.import_source or context.scene.neox_animation_import_source
 
-        if not animation_path:
-            self.report({"ERROR"}, "Please select a .cpdanimation file")
-            return {"CANCELLED"}
+        if import_source == "remote":
+            animation_asset_path = context.scene.neox_remote_animation_path.strip().replace("\\", "/")
+            if not animation_asset_path:
+                self.report({"ERROR"}, "Please enter a remote .cpdanimation asset path")
+                return {"CANCELLED"}
+            if not animation_asset_path.lower().endswith(".cpdanimation"):
+                self.report({"ERROR"}, f"Expected a remote .cpdanimation path: {animation_asset_path}")
+                return {"CANCELLED"}
 
-        if os.path.splitext(animation_path)[1].lower() != ".cpdanimation":
-            self.report({"ERROR"}, f"Expected a .cpdanimation file: {animation_path}")
-            return {"CANCELLED"}
+            try:
+                from .remote_import import extract_remote_asset_to_cache
+
+                cache_root = Path(__file__).resolve().parent / "remote_import_cache" / "animations"
+                animation_path = extract_remote_asset_to_cache(animation_asset_path, cache_root)
+            except Exception as exc:
+                self.report({"ERROR"}, f"Remote animation import failed: {exc}")
+                return {"CANCELLED"}
+        else:
+            animation_path = self.filepath or context.scene.neox_animation_selector
+            animation_path = bpy.path.abspath(animation_path)
+
+            if not animation_path:
+                self.report({"ERROR"}, "Please select a .cpdanimation file")
+                return {"CANCELLED"}
+
+            if os.path.splitext(animation_path)[1].lower() != ".cpdanimation":
+                self.report({"ERROR"}, f"Expected a .cpdanimation file: {animation_path}")
+                return {"CANCELLED"}
 
         if not os.path.isfile(animation_path):
             self.report({"ERROR"}, f"File not found: {animation_path}")
@@ -139,7 +165,10 @@ class IDVMI_OT_Import_Neox_Animation(bpy.types.Operator, ImportHelper):
             self.report({"ERROR"}, f"[{type(exc).__name__}] {exc}")
             return {"CANCELLED"}
 
-        context.scene.neox_animation_selector = animation_path
+        if import_source == "remote":
+            context.scene.neox_remote_animation_path = animation_asset_path
+        else:
+            context.scene.neox_animation_selector = animation_path
         self.report({"INFO"}, f"Animation import OK -> {action.name}")
         return {"FINISHED"}
 

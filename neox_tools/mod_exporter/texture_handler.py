@@ -48,7 +48,7 @@ def _shader_textures_from_mesh_materials(mesh_obj):
 
     return found
 
-def texture_handler(export_path, context, operator):
+def texture_handler(export_path, context, operator, asset_stem="main"):
     armature = get_armature(context, operator)
     
     material_template_path = os.path.join(os.path.dirname(__file__), "tex_resource", "initial_shading.mtl")
@@ -124,11 +124,11 @@ def texture_handler(export_path, context, operator):
                 mat_file.write(ET.tostring(material_data, encoding='utf-8', method='xml'))
 
     material_group_template_path = os.path.join(os.path.dirname(__file__), "tex_resource", "initial_material_group.mtg")
-    material_group_path = os.path.join(export_path, "main.mtg")
+    material_group_path = os.path.join(export_path, f"{asset_stem}.mtg")
 
     material_group = ET.parse(material_group_template_path).getroot()
     
-    material_group.find("MaterialGroup").attrib["Name"] = "main"
+    material_group.find("MaterialGroup").attrib["Name"] = asset_stem
 
     def get_mtl_files():
         ret = []

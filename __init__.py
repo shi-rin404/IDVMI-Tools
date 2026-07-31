@@ -7,7 +7,7 @@ from .neox_tools.import_ops import menu_func_import
 bl_info = {
     "name": "Identity V Model Importer Tools",
     "author": "Cookie",
-    "version": (8, 3, 0),
+    "version": (9, 0, 0),
     "blender": (3, 6, 0),
     "location": "View3D > Sidebar > Tool Tab",
     "description": "NeoX Mesh Importer/Exporter, 3DMigoto Mod Exporter",
@@ -26,6 +26,7 @@ def unregister():
     except ValueError:
         pass
 
+    unregister_props()
+
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
-    unregister_props()

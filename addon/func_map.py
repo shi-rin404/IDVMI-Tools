@@ -107,6 +107,22 @@ def _draw_import_neox_mesh(layout, scene, context, folder_box):
     op.import_source = "local"
 
 def _draw_import_neox_animation(layout, scene, context, folder_box):
+    folder_box.label(text="Import from...")
+    folder_box.prop(scene, "neox_animation_import_source", text="")
+
+    if scene.neox_animation_import_source == "remote":
+        folder_box.label(text="Remote .cpdanimation path")
+        folder_box.prop(scene, "neox_remote_animation_path", text="")
+        op = folder_box.operator(
+            "idvmi_neox.import_animation",
+            text="Import Remote .cpdanimation",
+            icon="IMPORT",
+        )
+        op.filepath = ""
+        op.use_scene_selector = True
+        op.import_source = "remote"
+        return
+
     folder_box.label(text="NeoX Animation")
     op = folder_box.operator(
         "idvmi_neox.import_animation",
@@ -115,14 +131,24 @@ def _draw_import_neox_animation(layout, scene, context, folder_box):
     )
     op.filepath = ""
     op.use_scene_selector = False
+    op.import_source = "local"
 
 def _draw_export_neox_animation(layout, scene, context, folder_box):
-    folder_box.label(text="NeoX Animation")
-    folder_box.prop(scene, "neox_animation_export_selector", text="")
-    folder_box.prop(scene, "neox_animation_skeleton_preset")
-    if scene.neox_animation_skeleton_preset == 'custom':
-        folder_box.label(text="Custom Skeleton Path")
-        folder_box.prop(scene, "neox_animation_custom_skeleton_path", text="")
+    folder_box.label(text="Export Mode")
+    folder_box.prop(scene, "neox_animation_export_mode", text="")
+
+    if scene.neox_animation_export_mode == "implement_existing_mod":
+        folder_box.label(text="Mod Gim File")
+        folder_box.prop(scene, "neox_animation_export_gim_path", text="")
+        folder_box.label(text="Animation Name")
+        folder_box.prop(scene, "neox_animation_export_animation_name", text="")
+    else:
+        folder_box.label(text="NeoX Animation")
+        folder_box.prop(scene, "neox_animation_export_selector", text="")
+        folder_box.prop(scene, "neox_animation_skeleton_preset")
+        if scene.neox_animation_skeleton_preset == 'custom':
+            folder_box.label(text="Custom Skeleton Path")
+            folder_box.prop(scene, "neox_animation_custom_skeleton_path", text="")
 
     options = layout.box()
     options.prop(scene, "neox_animation_export_loop")
@@ -136,6 +162,9 @@ def _draw_export_neox_animation(layout, scene, context, folder_box):
         tolerances.prop(scene, "neox_animation_rotation_tolerance_degrees")
 
     op = layout.operator("idvmi_neox.export_animation", icon="EXPORT")
+    op.export_mode = scene.neox_animation_export_mode
+    op.gim_path = scene.neox_animation_export_gim_path
+    op.animation_name = scene.neox_animation_export_animation_name
     op.filepath = scene.neox_animation_export_selector
     op.skeleton_preset = scene.neox_animation_skeleton_preset
     op.custom_skeleton_path = scene.neox_animation_custom_skeleton_path
@@ -216,7 +245,36 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
         text="Export with Custom Skeleton",
     )
 
+    layout.prop(scene, "neox_mod_export_create_mod_json", text="Create mod.json")
     layout.operator("idvmi_neox.neox_mod_exporter", icon="EXPORT")
+
+
+def _draw_build_dual_form_skin(layout, scene, context, folder_box):
+    folder_box.label(text="Main Model Gim File")
+    folder_box.prop(scene, "neox_dual_form_main_gim", text="")
+    folder_box.label(text="Dual Form Gim File")
+    folder_box.prop(scene, "neox_dual_form_dual_gim", text="")
+
+    trigger_box = layout.box()
+    trigger_box.label(text="Dual Form Triggers")
+    row = trigger_box.row(align=True)
+    input_split = row.split(factor=0.84, align=True)
+    input_split.prop(scene, "neox_dual_form_trigger_text", text="")
+    button_split = input_split.split(factor=0.5, align=True)
+    button_split.operator("idvmi_neox.dual_form_add_trigger", text="+")
+    button_split.operator("idvmi_neox.dual_form_remove_trigger", text="-")
+    trigger_box.template_list(
+        "IDVMI_UL_Dual_Form_Triggers",
+        "",
+        scene,
+        "neox_dual_form_triggers",
+        scene,
+        "neox_dual_form_trigger_index",
+        rows=4,
+    )
+
+    layout.operator("idvmi_neox.build_dual_form_skin", icon="MODIFIER")
+
 
 def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
     layout.label(text="Action")
@@ -262,6 +320,7 @@ neox_dispatch = {
     'OPT_Import_Neox_Animation': _draw_import_neox_animation,
     'OPT_Export_Neox_Animation': _draw_export_neox_animation,
     'OPT_NeoX_Mod_Exporter': _draw_export_neox_mod,
+    'OPT_Build_Dual_Form_Skin': _draw_build_dual_form_skin,
     'OPT_Export_Neox_Mesh': _draw_export_neox_mesh,
     'OPT_Socket_Operations': _draw_socket_operations,
 }

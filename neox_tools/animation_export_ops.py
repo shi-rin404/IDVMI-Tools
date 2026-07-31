@@ -31,12 +31,18 @@ armature property when available.
 
 from __future__ import annotations
 
+import copy
 import hashlib
+import json
 import math
 import os
+import posixpath
+import re
 import struct
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Iterable, Sequence
+import xml.etree.ElementTree as ET
 
 import bpy
 from bpy.props import BoolProperty, FloatProperty, IntProperty, StringProperty
@@ -1221,6 +1227,7 @@ def export_cpdanimation(
     armature_obj: bpy.types.Object,
     skeleton_path: str,
     *,
+    export_action_name: str | None = None,
     loop: bool | None = None,
     fps: int | None = None,
     reduce_keys: bool = True,
@@ -1240,6 +1247,7 @@ def export_cpdanimation(
     if animation_data is None or animation_data.action is None:
         raise CPDExportError("The armature has no active Action.")
     action = animation_data.action
+    output_action_name = str(export_action_name or "").strip() or action.name
 
     try:
         ordered_bones = build_export_bone_order(armature_obj)
@@ -1363,7 +1371,7 @@ def export_cpdanimation(
     data_section = pack_section(b"DATA", build_data_payload(tracks))
     name_section = pack_section(
         b"NAME",
-        build_name_payload(action.name, bone_order),
+        build_name_payload(output_action_name, bone_order),
     )
 
     file_bytes = build_file_bytes(
@@ -1387,7 +1395,7 @@ def export_cpdanimation(
 
     print("[CPD Export] Export complete")
     print(f"[CPD Export] File: {filepath}")
-    print(f"[CPD Export] Action: {action.name}")
+    print(f"[CPD Export] Action: {output_action_name}")
     print(f"[CPD Export] Skeleton path: {skeleton_path}")
     print(f"[CPD Export] Bones: {len(tracks)}")
     print(f"[CPD Export] FPS: {export_fps}")
@@ -1402,7 +1410,7 @@ def export_cpdanimation(
 
     return ExportResult(
         filepath=filepath,
-        action_name=action.name,
+        action_name=output_action_name,
         bone_count=len(tracks),
         position_key_count=position_key_count,
         scale_key_count=scale_key_count,
@@ -1529,6 +1537,370 @@ def resolve_export_skeleton_path(
     raise CPDExportError("Skeleton path is empty.")
 
 
+def _normalize_asset_path(path: str) -> str:
+    return str(path).strip().replace("\\", "/").strip("/")
+
+
+def _documents_res_parts(path: Path) -> tuple[list[str], int]:
+    parts = list(path.resolve(strict=False).parts)
+    lower = [part.lower() for part in parts]
+    for index in range(len(lower) - 1):
+        if lower[index] == "documents" and lower[index + 1] == "res":
+            return parts, index
+    raise CPDExportError(f"Path is not inside Documents/res: {path}")
+
+
+def _documents_res_relative_path(path: Path) -> str:
+    parts, index = _documents_res_parts(path)
+    return "/".join(parts[index + 2 :]).replace("\\", "/")
+
+
+def _documents_res_root(path: Path) -> Path:
+    parts, index = _documents_res_parts(path)
+    return Path(*parts[: index + 2])
+
+
+def _mod_root_relative_path(path: Path) -> str:
+    relative = _documents_res_relative_path(path)
+    pieces = [piece for piece in relative.split("/") if piece]
+    if len(pieces) >= 2 and pieces[0].lower() == "mod":
+        return "/".join(pieces[:2])
+    return posixpath.dirname(relative)
+
+
+def _relative_documents_res_reference(from_path: Path, target_documents_res_path: str) -> str:
+    from_dir = posixpath.dirname(_documents_res_relative_path(from_path))
+    target = _normalize_asset_path(target_documents_res_path)
+    return posixpath.relpath(target, start=from_dir).replace("\\", "/")
+
+
+def _relative_from_animconfig(animconfig_path: Path, target_path: Path) -> str:
+    return posixpath.relpath(
+        _documents_res_relative_path(target_path),
+        start=posixpath.dirname(_documents_res_relative_path(animconfig_path)),
+    ).replace("\\", "/")
+
+
+def _safe_file_stem(value: str, fallback: str) -> str:
+    stem = "".join(
+        char if char.isalnum() or char in ("_", "-") else "_"
+        for char in str(value).strip()
+    ).strip("_")
+    return stem or fallback
+
+
+def _load_gim_root(path: Path) -> tuple[ET.Element, bool]:
+    from .mod_exporter.xml_converter import convert_handler, parse_handler
+
+    if parse_handler.typeFile(str(path)) == "Binary":
+        element_tags, attribute_map = parse_handler.parseCustomBinFormat(str(path))
+        return convert_handler.tagWrapper(element_tags, attribute_map)[0], True
+    return ET.parse(path).getroot(), False
+
+
+def _write_gim_root(path: Path, root: ET.Element, binary: bool) -> None:
+    from .mod_exporter.xml_converter import convert_handler, io_handler
+
+    if binary:
+        io_handler.ExportGim(
+            str(path),
+            convert_handler.xml_to_custom_bin(convert_handler.xml_to_bfs_list(root)),
+        )
+    else:
+        io_handler.ExportUndecodedGim(str(path), root)
+
+
+def _gim_file_value(root: ET.Element, section: str) -> str:
+    node = root.find(section)
+    if node is None:
+        return ""
+    file_name = node.find("FileName")
+    if file_name is None:
+        return ""
+    return _normalize_asset_path(file_name.attrib.get("Value", ""))
+
+
+def _set_gim_file_value(root: ET.Element, section: str, value: str) -> None:
+    node = root.find(section)
+    if node is None:
+        node = ET.SubElement(root, section)
+    file_name = node.find("FileName")
+    if file_name is None:
+        file_name = ET.SubElement(node, "FileName")
+    file_name.attrib["Value"] = value
+
+
+def _resolve_gim_reference(gim_path: Path, reference: str) -> tuple[str, bool, Path | None]:
+    reference = str(reference).strip().replace("\\", "/")
+    if not reference:
+        raise CPDExportError(f"Empty gim reference in {gim_path}")
+    if reference.lower().startswith("chr/"):
+        return _normalize_asset_path(reference), True, None
+
+    gim_relative_dir = posixpath.dirname(_documents_res_relative_path(gim_path))
+    target_relative = posixpath.normpath(posixpath.join(gim_relative_dir, reference)).replace("\\", "/")
+    mod_root = _mod_root_relative_path(gim_path)
+    is_remote = not (
+        target_relative == mod_root
+        or target_relative.startswith(f"{mod_root}/")
+    )
+    if is_remote:
+        return _normalize_asset_path(target_relative), True, None
+
+    local_path = _documents_res_root(gim_path).joinpath(*target_relative.split("/"))
+    return _normalize_asset_path(target_relative), False, local_path
+
+
+def _load_animconfig_for_mod(
+    asset_index,
+    gim_path: Path,
+    gim_root: ET.Element,
+) -> tuple[ET.Element, str, Path, bool]:
+    animconfig_ref = _gim_file_value(gim_root, "AnimationConfigFile")
+    resolved, is_remote, local_path = _resolve_gim_reference(gim_path, animconfig_ref)
+    if is_remote:
+        try:
+            data = asset_index.extract(resolved).data
+        except Exception as exc:
+            raise CPDExportError(f"Animconfig asset could not be found by asset finder: {resolved}") from exc
+        try:
+            root = ET.fromstring(data.decode("utf-8-sig"))
+        except Exception as exc:
+            raise CPDExportError(f"Remote animconfig is not valid XML: {resolved}") from exc
+        return root, resolved, gim_path.with_suffix(".animconfig"), True
+
+    if local_path is None or not local_path.is_file():
+        raise CPDExportError(f"Local animconfig file does not exist: {animconfig_ref}")
+    return ET.parse(local_path).getroot(), resolved, local_path, False
+
+
+def _write_animconfig_for_mod(path: Path, root: ET.Element) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ET.indent(root, space="\t")
+    ET.ElementTree(root).write(path, encoding="utf-8", xml_declaration=False)
+
+
+def _resolve_animation_asset_reference(animconfig_reference: str, animation_reference: str) -> str:
+    normalized = str(animation_reference).strip().replace("\\", "/").strip("/")
+    if not normalized:
+        raise CPDExportError("Animation FileName is empty")
+    lowered = normalized.lower()
+    if lowered.startswith("chr/") or lowered.startswith("mod/"):
+        return normalized
+    base_dir = posixpath.dirname(animconfig_reference.strip("/"))
+    return posixpath.normpath(posixpath.join(base_dir, normalized)).replace("\\", "/")
+
+
+def _load_animation_base_text(
+    asset_index,
+    gim_path: Path,
+    animconfig_reference: str,
+    animconfig_path: Path,
+    animation_reference: str,
+) -> tuple[str, str]:
+    asset_reference = _resolve_animation_asset_reference(
+        animconfig_reference,
+        animation_reference,
+    )
+    mod_root = _mod_root_relative_path(gim_path)
+    if asset_reference == mod_root or asset_reference.startswith(f"{mod_root}/"):
+        local_candidate = _documents_res_root(gim_path).joinpath(*asset_reference.split("/"))
+        if local_candidate.is_file():
+            return local_candidate.read_text(encoding="utf-8-sig"), asset_reference
+
+    try:
+        data = asset_index.extract(asset_reference).data
+    except Exception as exc:
+        raise CPDExportError(f"Animation asset could not be found by asset finder: {asset_reference}") from exc
+    try:
+        return data.decode("utf-8-sig"), asset_reference
+    except Exception as exc:
+        raise CPDExportError(f"Animation asset is not valid UTF-8 JSON text: {asset_reference}") from exc
+
+
+def _localize_animation_dependency_text(raw_text: str, cpdanimation_path: Path) -> str:
+    dependency = _documents_res_relative_path(cpdanimation_path)
+    match = re.search(r'("Dependices"\s*:\s*)\[(.*?)\]', raw_text, flags=re.DOTALL)
+    if match is None:
+        raise CPDExportError("Animation JSON has no _FileHeader.Dependices array")
+
+    line_start = raw_text.rfind("\n", 0, match.start()) + 1
+    line_indent = raw_text[line_start:match.start()]
+    item_indent = f"{line_indent}\t"
+    replacement = (
+        f'{match.group(1)}[\n'
+        f"{item_indent}{json.dumps(dependency, ensure_ascii=False)}\n"
+        f"{line_indent}]"
+    )
+    return raw_text[:match.start()] + replacement + raw_text[match.end():]
+
+
+def _find_animation_by_name(animconfig_root: ET.Element, animation_name: str) -> ET.Element | None:
+    wanted = animation_name.strip().lower()
+    for animation in animconfig_root.findall("./AnimationList/Animation"):
+        if animation.attrib.get("Name", "").strip().lower() == wanted:
+            return animation
+    return None
+
+
+def _select_animation_base(
+    animconfig_root: ET.Element,
+    action_name: str,
+) -> tuple[ET.Element, bool, list[str], list[str]]:
+    warnings: list[str] = []
+    infos: list[str] = []
+    existing = _find_animation_by_name(animconfig_root, action_name)
+    if existing is not None:
+        return existing, True, warnings, infos
+
+    warnings.append(
+        f"Animation '{action_name}' was not found in animconfig; a new entry was created."
+    )
+    default = animconfig_root.find("./DefaultAnimation")
+    default_name = ""
+    if default is not None:
+        default_name = default.attrib.get("Name", "").strip()
+    if default_name:
+        fallback = _find_animation_by_name(animconfig_root, default_name)
+        if fallback is not None and fallback.attrib.get("FileName", "").strip():
+            infos.append(f"Using DefaultAnimation '{default_name}' as .animation base.")
+            return fallback, False, warnings, infos
+        infos.append(f"DefaultAnimation '{default_name}' has no matching Animation entry.")
+
+    for animation in animconfig_root.findall("./AnimationList/Animation"):
+        if animation.attrib.get("FileName", "").strip():
+            infos.append(
+                "Using the first AnimationList entry as .animation base: "
+                f"'{animation.attrib.get('Name', '')}'."
+            )
+            return animation, False, warnings, infos
+
+    raise CPDExportError(
+        "Animconfig has no usable Animation/@FileName entry for .animation base."
+    )
+
+
+def _localize_remote_animconfig_paths(
+    animconfig_root: ET.Element,
+    source_animconfig_reference: str,
+    output_animconfig_path: Path,
+) -> None:
+    for animation in animconfig_root.findall("./AnimationList/Animation"):
+        file_name = animation.attrib.get("FileName", "").strip()
+        if not file_name:
+            continue
+        official = _resolve_animation_asset_reference(
+            source_animconfig_reference,
+            file_name,
+        )
+        animation.attrib["FileName"] = _relative_documents_res_reference(
+            output_animconfig_path,
+            official,
+        )
+
+
+def implement_animation_to_existing_mod(
+    *,
+    gim_path: Path,
+    armature_obj: bpy.types.Object,
+    animation_name: str,
+    loop: bool,
+    fps: int,
+    reduce_keys: bool,
+    position_tolerance: float,
+    scale_tolerance: float,
+    rotation_tolerance_degrees: float,
+) -> tuple[ExportResult, list[str], list[str]]:
+    from .remote_import import _make_asset_index
+
+    if not gim_path.is_file():
+        raise CPDExportError(f"Mod gim file does not exist: {gim_path}")
+
+    asset_index = _make_asset_index()
+    gim_root, gim_binary = _load_gim_root(gim_path)
+    skeleton_ref = _gim_file_value(gim_root, "SkeletonFile")
+    skeleton_documents_res, _skeleton_remote, _skeleton_local = _resolve_gim_reference(
+        gim_path,
+        skeleton_ref,
+    )
+    animconfig_root, animconfig_reference, animconfig_path, animconfig_was_remote = (
+        _load_animconfig_for_mod(asset_index, gim_path, gim_root)
+    )
+
+    action_name = animation_name.strip()
+    if not action_name:
+        raise CPDExportError("Animation name is empty.")
+
+    base_animation, already_exists, warnings, infos = _select_animation_base(
+        animconfig_root,
+        action_name,
+    )
+    base_file_name = base_animation.attrib.get("FileName", "").strip()
+    animation_folder = animconfig_path.parent / f"animations_{animconfig_path.stem}"
+    animation_stem = _safe_file_stem(action_name, "animation")
+    animation_path = animation_folder / f"{animation_stem}.animation"
+    cpdanimation_path = animation_folder / f"{animation_stem}.cpdanimation"
+
+    skeleton_cpdanimation_relative = _relative_documents_res_reference(
+        cpdanimation_path,
+        skeleton_documents_res,
+    )
+    result = export_cpdanimation(
+        filepath=str(cpdanimation_path),
+        armature_obj=armature_obj,
+        skeleton_path=skeleton_cpdanimation_relative,
+        export_action_name=action_name,
+        loop=loop,
+        fps=fps,
+        reduce_keys=reduce_keys,
+        position_tolerance=position_tolerance,
+        scale_tolerance=scale_tolerance,
+        rotation_tolerance_degrees=rotation_tolerance_degrees,
+    )
+    warnings.extend(result.warnings)
+
+    base_text, base_asset = _load_animation_base_text(
+        asset_index,
+        gim_path,
+        animconfig_reference,
+        animconfig_path,
+        base_file_name,
+    )
+    if animconfig_was_remote:
+        _localize_remote_animconfig_paths(
+            animconfig_root,
+            animconfig_reference,
+            animconfig_path,
+        )
+
+    animation_path.parent.mkdir(parents=True, exist_ok=True)
+    animation_path.write_text(
+        _localize_animation_dependency_text(base_text, cpdanimation_path),
+        encoding="utf-8",
+    )
+
+    target_animation = base_animation
+    if not already_exists:
+        animation_list = animconfig_root.find("./AnimationList")
+        if animation_list is None:
+            raise CPDExportError("Animconfig has no AnimationList element.")
+        target_animation = copy.deepcopy(base_animation)
+        animation_list.append(target_animation)
+    target_animation.attrib["Name"] = action_name
+    target_animation.attrib["FileName"] = _relative_from_animconfig(animconfig_path, animation_path)
+
+    if animconfig_was_remote:
+        _set_gim_file_value(gim_root, "AnimationConfigFile", animconfig_path.name)
+        _write_gim_root(gim_path, gim_root, gim_binary)
+        infos.append(f"Remote animconfig localized to {animconfig_path.name}.")
+    else:
+        infos.append(f"Local animconfig edited: {animconfig_path.name}.")
+    infos.append(f"Base .animation copied from {base_asset}.")
+
+    _write_animconfig_for_mod(animconfig_path, animconfig_root)
+    return result, warnings, infos
+
+
 class IDVMI_OT_Export_Neox_Animation(bpy.types.Operator):
     bl_idname = "idvmi_neox.export_animation"
     bl_label = "Export Animation"
@@ -1537,6 +1909,18 @@ class IDVMI_OT_Export_Neox_Animation(bpy.types.Operator):
     filename_ext = ".cpdanimation"
     filepath: StringProperty(subtype="FILE_PATH")
     filter_glob: StringProperty(default="*.cpdanimation", options={"HIDDEN"})
+    export_mode: StringProperty(
+        name="Export Mode",
+        default="implement_existing_mod",
+    )
+    gim_path: StringProperty(
+        name="Mod Gim File",
+        default="",
+    )
+    animation_name: StringProperty(
+        name="Animation Name",
+        default="",
+    )
 
     skeleton_preset: StringProperty(
         name="Skeleton",
@@ -1600,58 +1984,102 @@ class IDVMI_OT_Export_Neox_Animation(bpy.types.Operator):
         return self.execute(context)
 
     def execute(self, context: bpy.types.Context):
+        result = None
+        warnings: list[str] = []
+        infos: list[str] = []
         try:
             armature_obj, _ = get_active_armature_with_action()
-
-            filepath = self.filepath or context.scene.neox_animation_export_selector
-            if not filepath:
-                raise CPDExportError("Export filepath is empty.")
-            filepath = bpy.path.abspath(filepath)
-            if os.path.splitext(filepath)[1].lower() != self.filename_ext:
-                filepath += self.filename_ext
-
-            skeleton_preset = (
-                self.skeleton_preset or context.scene.neox_animation_skeleton_preset
-            )
-            custom_skeleton_path = (
-                self.custom_skeleton_path
-                or context.scene.neox_animation_custom_skeleton_path
-            )
-            relative_skeleton_path = resolve_export_skeleton_path(
-                skeleton_preset,
-                custom_skeleton_path,
-                filepath,
-                armature_obj,
+            export_mode = (
+                self.export_mode
+                or context.scene.neox_animation_export_mode
+                or "implement_existing_mod"
             )
 
-            armature_obj[PROPERTY_LOOP] = self.loop
+            if export_mode == "implement_existing_mod":
+                gim_path = (
+                    self.gim_path
+                    or context.scene.neox_animation_export_gim_path
+                )
+                if not gim_path:
+                    raise CPDExportError("Mod gim file is empty.")
+                gim_path = Path(bpy.path.abspath(gim_path))
+                armature_obj[PROPERTY_LOOP] = self.loop
+                result, warnings, infos = implement_animation_to_existing_mod(
+                    gim_path=gim_path,
+                    armature_obj=armature_obj,
+                    animation_name=(
+                        self.animation_name
+                        or context.scene.neox_animation_export_animation_name
+                    ),
+                    loop=self.loop,
+                    fps=self.fps,
+                    reduce_keys=self.reduce_keys,
+                    position_tolerance=self.position_tolerance,
+                    scale_tolerance=self.scale_tolerance,
+                    rotation_tolerance_degrees=self.rotation_tolerance_degrees,
+                )
+                context.scene.neox_animation_export_gim_path = str(gim_path)
+                context.scene.neox_animation_export_animation_name = (
+                    self.animation_name
+                    or context.scene.neox_animation_export_animation_name
+                )
+                context.scene.neox_animation_export_mode = export_mode
+            else:
+                filepath = self.filepath or context.scene.neox_animation_export_selector
+                if not filepath:
+                    raise CPDExportError("Export filepath is empty.")
+                filepath = bpy.path.abspath(filepath)
+                if os.path.splitext(filepath)[1].lower() != self.filename_ext:
+                    filepath += self.filename_ext
 
-            result = export_cpdanimation(
-                filepath=filepath,
-                armature_obj=armature_obj,
-                skeleton_path=relative_skeleton_path,
-                loop=self.loop,
-                fps=self.fps,
-                reduce_keys=self.reduce_keys,
-                position_tolerance=self.position_tolerance,
-                scale_tolerance=self.scale_tolerance,
-                rotation_tolerance_degrees=self.rotation_tolerance_degrees,
-            )
+                skeleton_preset = (
+                    self.skeleton_preset or context.scene.neox_animation_skeleton_preset
+                )
+                custom_skeleton_path = (
+                    self.custom_skeleton_path
+                    or context.scene.neox_animation_custom_skeleton_path
+                )
+                relative_skeleton_path = resolve_export_skeleton_path(
+                    skeleton_preset,
+                    custom_skeleton_path,
+                    filepath,
+                    armature_obj,
+                )
+
+                armature_obj[PROPERTY_LOOP] = self.loop
+
+                result = export_cpdanimation(
+                    filepath=filepath,
+                    armature_obj=armature_obj,
+                    skeleton_path=relative_skeleton_path,
+                    loop=self.loop,
+                    fps=self.fps,
+                    reduce_keys=self.reduce_keys,
+                    position_tolerance=self.position_tolerance,
+                    scale_tolerance=self.scale_tolerance,
+                    rotation_tolerance_degrees=self.rotation_tolerance_degrees,
+                )
+                warnings = list(result.warnings)
+                context.scene.neox_animation_export_selector = filepath
+                context.scene.neox_animation_skeleton_preset = skeleton_preset
+                context.scene.neox_animation_custom_skeleton_path = custom_skeleton_path
+                context.scene.neox_animation_export_mode = export_mode
         except Exception as exc:
             self.report({"ERROR"}, f"{type(exc).__name__}: {exc}")
             print(f"[CPD Export] Failed: {type(exc).__name__}: {exc}")
             return {"CANCELLED"}
 
-        context.scene.neox_animation_export_selector = filepath
-        context.scene.neox_animation_skeleton_preset = skeleton_preset
-        context.scene.neox_animation_custom_skeleton_path = custom_skeleton_path
+        for info in infos[:8]:
+            self.report({"INFO"}, info)
+        if len(infos) > 8:
+            self.report({"INFO"}, f"{len(infos) - 8} additional info message(s) were printed to the console.")
 
-        for warning in result.warnings[:8]:
+        for warning in warnings[:8]:
             self.report({"WARNING"}, warning)
-        if len(result.warnings) > 8:
+        if len(warnings) > 8:
             self.report(
                 {"WARNING"},
-                f"{len(result.warnings) - 8} additional warning(s) were printed "
+                f"{len(warnings) - 8} additional warning(s) were printed "
                 "to the console.",
             )
 

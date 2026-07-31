@@ -79,7 +79,7 @@ def _delete_marked_sockets(decoded_gim_data: ET.Element, armature) -> int:
     return deleted
 
 
-def gim_handler(export_path:str, rig_info:dict, armature):
+def gim_handler(export_path:str, rig_info:dict, armature, asset_stem="main"):
     # element_tags, attribute_map = parse_handler.parseCustomBinFormat(rig_info["gim"])
     if parse_handler.typeFile(rig_info["gim"]) == "Binary":
         element_tags, attribute_map = parse_handler.parseCustomBinFormat(rig_info["gim"])
@@ -100,20 +100,23 @@ def gim_handler(export_path:str, rig_info:dict, armature):
     # Rig
     decoded_gim_data.find("SkeletonFile").find("FileName").attrib["Value"] = rig_info["skeleton"]
     decoded_gim_data.find("AnimationConfigFile").find("FileName").attrib["Value"] = rig_info["animconfig"]
+    mtg_file = decoded_gim_data.find("MtgFile")
+    if mtg_file is not None:
+        mtg_file.attrib["MtgPath"] = f"{asset_stem}.mtg"
     _delete_marked_sockets(decoded_gim_data, armature)
     _append_custom_sockets(decoded_gim_data, armature)
     
     if ENCODE_GIM_FILE:
         io_handler.ExportGim(
-                file_path=os.path.join(export_path, "main.gim"),
+                file_path=os.path.join(export_path, f"{asset_stem}.gim"),
                 gim_data=convert_handler.xml_to_custom_bin(
                     convert_handler.xml_to_bfs_list(decoded_gim_data)
                 )
             )
     else: 
         io_handler.ExportUndecodedGim(
-            file_path=os.path.join(export_path, "main.gim"),
+            file_path=os.path.join(export_path, f"{asset_stem}.gim"),
             gim_data=decoded_gim_data
         )
     
-    return os.path.join(export_path, "main.gim")
+    return os.path.join(export_path, f"{asset_stem}.gim")

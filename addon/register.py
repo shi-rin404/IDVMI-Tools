@@ -1,5 +1,6 @@
 import bpy
 from ..neox_tools.utils.game_dir_detector import check_game_directory
+from ..neox_tools import dual_form_ops
 
 CPD_ANIMATION_LOOP_PROPERTY = "NeoX:CPDAnimation:loop"
 LOOP_VALUE_KEY = "_idvmi_neox_animation_export_loop_value"
@@ -80,6 +81,41 @@ def register_props():
         name="Export with Custom Skeleton",
         description="Generate and bind a custom .skeleton during NeoX mod export",
         default=False
+    )
+
+    bpy.types.Scene.neox_mod_export_create_mod_json = bpy.props.BoolProperty(
+        name="Create mod.json",
+        description="Create mod.json next to the exported NeoX gim",
+        default=True
+    )
+
+    bpy.types.Scene.neox_dual_form_main_gim = bpy.props.StringProperty(
+        name="Main Gim File",
+        description="Main form .gim file exported by Export NeoX Mod",
+        subtype='FILE_PATH',
+        default=""
+    )
+
+    bpy.types.Scene.neox_dual_form_dual_gim = bpy.props.StringProperty(
+        name="Dual Form Gim File",
+        description="Dual form .gim file exported by Export NeoX Mod",
+        subtype='FILE_PATH',
+        default=""
+    )
+
+    bpy.types.Scene.neox_dual_form_trigger_text = bpy.props.StringProperty(
+        name="Dual Form Trigger",
+        description="Animation name that should enable the dual form",
+        default=""
+    )
+
+    bpy.types.Scene.neox_dual_form_triggers = bpy.props.CollectionProperty(
+        type=dual_form_ops.IDVMI_PG_Dual_Form_Trigger
+    )
+
+    bpy.types.Scene.neox_dual_form_trigger_index = bpy.props.IntProperty(
+        name="Dual Form Trigger Index",
+        default=-1
     )
 
     bpy.types.Scene.neox_rig_selector = bpy.props.EnumProperty(
@@ -219,6 +255,45 @@ def register_props():
         default=""
     )
 
+    bpy.types.Scene.neox_animation_import_source = bpy.props.EnumProperty(
+        name="Import Source",
+        description="Select where the NeoX animation import should read from",
+        items=[
+            ('remote', "Remote file", "Import from a game asset .cpdanimation path"),
+            ('local', "Local file", "Import from a local .cpdanimation file"),
+        ],
+        default='remote'
+    )
+
+    bpy.types.Scene.neox_remote_animation_path = bpy.props.StringProperty(
+        name="Remote Animation Path",
+        description="Game asset path to a .cpdanimation file",
+        default=""
+    )
+
+    bpy.types.Scene.neox_animation_export_mode = bpy.props.EnumProperty(
+        name="Export Mode",
+        description="Select how the NeoX animation export should be written",
+        items=[
+            ('implement_existing_mod', "Implement to Existing Mod", "Export and bind the animation into a selected mod gim"),
+            ('raw_export', "Raw Export", "Write a standalone .cpdanimation file"),
+        ],
+        default='implement_existing_mod'
+    )
+
+    bpy.types.Scene.neox_animation_export_gim_path = bpy.props.StringProperty(
+        name="Mod Gim File",
+        description="Prefab .gim file of the existing NeoX mod",
+        subtype='FILE_PATH',
+        default=""
+    )
+
+    bpy.types.Scene.neox_animation_export_animation_name = bpy.props.StringProperty(
+        name="Animation Name",
+        description="Animconfig animation name to create or replace. Empty uses the active Action name.",
+        default=""
+    )
+
     bpy.types.Scene.neox_animation_export_selector = bpy.props.StringProperty(
         name="NeoX Animation Export Selector",
         description="Select a .cpdanimation export path",
@@ -294,6 +369,7 @@ def register_props():
             ('OPT_Import_Neox_Animation', "Import Animation", "Imports .cpdanimation file"),
             ('OPT_Export_Neox_Animation', "Export Animation", "Exports .cpdanimation file"),
             ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),
+            ('OPT_Build_Dual_Form_Skin', "Build Dual Form Skin", "Build a dual-form skin from exported NeoX gim files"),
             ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),
             ('OPT_Socket_Operations', "Socket Operations", "Socket editor GUI"),
         ],

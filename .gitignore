@@ -12,3 +12,4 @@ neox_tools/export_per_material_log.txt
 neox_tools/mod_exporter/export_per_material_log.txt
 release.md
 release.bat
+agents.md
