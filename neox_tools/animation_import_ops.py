@@ -328,7 +328,13 @@ def parse_name_section(payload: bytes) -> tuple[str, list[str]]:
     return animation_name, bone_names
 
 
-def parse_position_track(stream: BinaryIO) -> list[VectorKey]:
+def parse_position_track(
+    stream: BinaryIO,
+    *,
+    allow_unsorted_keys: bool = False,
+    warnings: list[str] | None = None,
+    bone_name: str = "",
+) -> list[VectorKey]:
     count = read_u16(stream)
     result: list[VectorKey] = []
 
@@ -338,7 +344,12 @@ def parse_position_track(stream: BinaryIO) -> list[VectorKey]:
         value = read_f16_vector3(stream)
 
         if frame < previous_frame:
-            raise CPDFormatError("Position keyframes are not sorted.")
+            message = "Position keyframes are not sorted."
+            if not allow_unsorted_keys:
+                raise CPDFormatError(message)
+            if warnings is not None:
+                label = f"{bone_name}: " if bone_name else ""
+                warnings.append(f"{label}{message}")
 
         result.append(VectorKey(frame, value))
         previous_frame = frame
@@ -346,7 +357,13 @@ def parse_position_track(stream: BinaryIO) -> list[VectorKey]:
     return result
 
 
-def parse_scale_track(stream: BinaryIO) -> list[VectorKey]:
+def parse_scale_track(
+    stream: BinaryIO,
+    *,
+    allow_unsorted_keys: bool = False,
+    warnings: list[str] | None = None,
+    bone_name: str = "",
+) -> list[VectorKey]:
     count = read_u16(stream)
     result: list[VectorKey] = []
 
@@ -356,7 +373,12 @@ def parse_scale_track(stream: BinaryIO) -> list[VectorKey]:
         value = read_f16_vector3(stream)
 
         if frame < previous_frame:
-            raise CPDFormatError("Scale keyframes are not sorted.")
+            message = "Scale keyframes are not sorted."
+            if not allow_unsorted_keys:
+                raise CPDFormatError(message)
+            if warnings is not None:
+                label = f"{bone_name}: " if bone_name else ""
+                warnings.append(f"{label}{message}")
 
         result.append(VectorKey(frame, value))
         previous_frame = frame
@@ -364,7 +386,13 @@ def parse_scale_track(stream: BinaryIO) -> list[VectorKey]:
     return result
 
 
-def parse_rotation_track(stream: BinaryIO) -> list[QuaternionKey]:
+def parse_rotation_track(
+    stream: BinaryIO,
+    *,
+    allow_unsorted_keys: bool = False,
+    warnings: list[str] | None = None,
+    bone_name: str = "",
+) -> list[QuaternionKey]:
     count = read_u16(stream)
     result: list[QuaternionKey] = []
 
@@ -374,7 +402,12 @@ def parse_rotation_track(stream: BinaryIO) -> list[QuaternionKey]:
         packed = read_u32(stream)
 
         if frame < previous_frame:
-            raise CPDFormatError("Rotation keyframes are not sorted.")
+            message = "Rotation keyframes are not sorted."
+            if not allow_unsorted_keys:
+                raise CPDFormatError(message)
+            if warnings is not None:
+                label = f"{bone_name}: " if bone_name else ""
+                warnings.append(f"{label}{message}")
 
         result.append(QuaternionKey(frame, unpack_quaternion(packed)))
         previous_frame = frame
@@ -382,7 +415,13 @@ def parse_rotation_track(stream: BinaryIO) -> list[QuaternionKey]:
     return make_quaternion_track_continuous(result)
 
 
-def parse_data_section(payload: bytes, bone_names: Sequence[str]) -> tuple[int, list[BoneTrack]]:
+def parse_data_section(
+    payload: bytes,
+    bone_names: Sequence[str],
+    *,
+    allow_unsorted_keys: bool = False,
+    warnings: list[str] | None = None,
+) -> tuple[int, list[BoneTrack]]:
     stream = io.BytesIO(payload)
     data_const = read_u8(stream)
 
@@ -396,9 +435,24 @@ def parse_data_section(payload: bytes, bone_names: Sequence[str]) -> tuple[int, 
         tracks.append(
             BoneTrack(
                 name=bone_name,
-                position_keys=parse_position_track(stream),
-                scale_keys=parse_scale_track(stream),
-                rotation_keys=parse_rotation_track(stream),
+                position_keys=parse_position_track(
+                    stream,
+                    allow_unsorted_keys=allow_unsorted_keys,
+                    warnings=warnings,
+                    bone_name=bone_name,
+                ),
+                scale_keys=parse_scale_track(
+                    stream,
+                    allow_unsorted_keys=allow_unsorted_keys,
+                    warnings=warnings,
+                    bone_name=bone_name,
+                ),
+                rotation_keys=parse_rotation_track(
+                    stream,
+                    allow_unsorted_keys=allow_unsorted_keys,
+                    warnings=warnings,
+                    bone_name=bone_name,
+                ),
             )
         )
 
@@ -412,7 +466,12 @@ def parse_data_section(payload: bytes, bone_names: Sequence[str]) -> tuple[int, 
     return data_const, tracks
 
 
-def parse_cpdanimation(path: str) -> CPDAnimation:
+def parse_cpdanimation(
+    path: str,
+    *,
+    allow_unsorted_keys: bool = False,
+    warnings: list[str] | None = None,
+) -> CPDAnimation:
     actual_size = os.path.getsize(path)
 
     with open(path, "rb") as stream:
@@ -471,7 +530,12 @@ def parse_cpdanimation(path: str) -> CPDAnimation:
 
     header = parse_header(sections[b"HEAD"])
     animation_name, bone_names = parse_name_section(sections[b"NAME"])
-    data_const, tracks = parse_data_section(sections[b"DATA"], bone_names)
+    data_const, tracks = parse_data_section(
+        sections[b"DATA"],
+        bone_names,
+        allow_unsorted_keys=allow_unsorted_keys,
+        warnings=warnings,
+    )
 
     return CPDAnimation(
         path=path,

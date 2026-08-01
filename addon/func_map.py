@@ -272,6 +272,11 @@ def _draw_build_dual_form_skin(layout, scene, context, folder_box):
         "neox_dual_form_trigger_index",
         rows=4,
     )
+    trigger_box.label(text="Insert Animation Names with Regex")
+    regex_row = trigger_box.row(align=True)
+    regex_split = regex_row.split(factor=0.88, align=True)
+    regex_split.prop(scene, "neox_dual_form_regex_text", text="")
+    regex_split.operator("idvmi_neox.dual_form_add_regex_triggers", text="+")
 
     layout.operator("idvmi_neox.build_dual_form_skin", icon="MODIFIER")
 

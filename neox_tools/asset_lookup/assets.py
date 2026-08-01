@@ -13,6 +13,9 @@ from .filefinder.core.paths import (
 from .filefinder.lookup.thy import ThyLookupTable
 
 
+_THY_LOOKUP_TABLE_CACHE: dict[str, ThyLookupTable] = {}
+
+
 @dataclass(frozen=True)
 class ExtractedAsset:
     request: ParsedInput
@@ -81,7 +84,9 @@ class AssetIndex:
     def _lookup(self, request: ParsedInput):
         table = self._thy_cache.get(request.archive.stem)
         if table is None:
-            table = ThyLookupTable(resolve_thy_path(self.game_root, request.archive.stem))
+            table = _cached_thy_lookup_table(
+                resolve_thy_path(self.game_root, request.archive.stem)
+            )
             self._thy_cache[request.archive.stem] = table
         return table.lookup(request.normalized_path)
 
@@ -94,3 +99,12 @@ class AssetIndex:
         normalized = raw_path.strip()
         stem = normalized.rsplit(".", 1)[0]
         return f"{stem}{extension}"
+
+
+def _cached_thy_lookup_table(thy_path: Path) -> ThyLookupTable:
+    cache_key = str(thy_path.resolve(strict=False))
+    table = _THY_LOOKUP_TABLE_CACHE.get(cache_key)
+    if table is None:
+        table = ThyLookupTable(thy_path)
+        _THY_LOOKUP_TABLE_CACHE[cache_key] = table
+    return table

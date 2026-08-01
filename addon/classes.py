@@ -26,6 +26,7 @@ classes = [
            dual_form_ops.IDVMI_UL_Dual_Form_Triggers,
            dual_form_ops.IDVMI_OT_Dual_Form_Add_Trigger,
            dual_form_ops.IDVMI_OT_Dual_Form_Remove_Trigger,
+           dual_form_ops.IDVMI_OT_Dual_Form_Add_Regex_Triggers,
            dual_form_ops.IDVMI_OT_Build_Dual_Form_Skin,
            visualize_socket_ops.IDVMI_OT_Create_Socket_Visuals,
            visualize_socket_ops.IDVMI_OT_Copy_Socket_Visual,

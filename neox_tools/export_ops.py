@@ -710,7 +710,8 @@ def parse_blender_meshes(armature, flip_uv_y, operator, log) -> dict:
 
 def export_neox_mesh(export_path:os.PathLike, mesh_data:dict, arm_obj, operator, log):
     log.write("--- Starting binary export ---\n"); log.flush()
-    bpy.ops.object.mode_set(mode='OBJECT')
+    if bpy.ops.object.mode_set.poll():
+        bpy.ops.object.mode_set(mode='OBJECT')
 
     try:
         with open(export_path, "wb") as file:

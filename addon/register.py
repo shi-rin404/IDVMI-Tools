@@ -118,6 +118,21 @@ def register_props():
         default=-1
     )
 
+    bpy.types.Scene.neox_dual_form_regex_text = bpy.props.StringProperty(
+        name="Regex",
+        description="One regex per line. Matching animation names from the selected main gim animconfig will be added.",
+        default=""
+    )
+
+    bpy.types.Scene.neox_dual_form_animation_name_cache = bpy.props.CollectionProperty(
+        type=dual_form_ops.IDVMI_PG_Dual_Form_Trigger
+    )
+
+    bpy.types.Scene.neox_dual_form_animation_name_cache_source = bpy.props.StringProperty(
+        name="Animation Name Cache Source",
+        default=""
+    )
+
     bpy.types.Scene.neox_rig_selector = bpy.props.EnumProperty(
         name="Rig Selector",
         description="Select your character rig",
