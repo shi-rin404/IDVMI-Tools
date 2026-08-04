@@ -2,25 +2,9 @@ import json
 import re
 
 import bpy
-from bpy_extras.io_utils import axis_conversion
 from mathutils import Matrix, Quaternion, Vector
 
-
-NEOX_TO_BLENDER_BONE_AXES = Matrix(
-    (
-        (0.0, 1.0, 0.0, 0.0),
-        (-1.0, 0.0, 0.0, 0.0),
-        (0.0, 0.0, 1.0, 0.0),
-        (0.0, 0.0, 0.0, 1.0),
-    )
-)
-
-GAME_TO_BLENDER = axis_conversion(
-    from_forward="Z",
-    from_up="Y",
-    to_forward="-Y",
-    to_up="Z",
-).to_4x4()
+from ..coordinate_axes import GAME_TO_BLENDER, NEOX_TO_BLENDER_BONE_AXES
 
 CUSTOM_BONE_SOCKETS_PROPERTY = "NeoX:CustomSockets"
 CUSTOM_ROOT_SOCKETS_PROPERTY = "NeoX:CustomRootSockets"

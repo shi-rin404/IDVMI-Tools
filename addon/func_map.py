@@ -80,6 +80,7 @@ def _draw_import_neox_mesh(layout, scene, context, folder_box):
     if scene.neox_mesh_import_source == "remote":
         folder_box.label(text="Remote .gim path")
         folder_box.prop(scene, "neox_remote_gim_path", text="")
+        folder_box.prop(scene, "neox_remote_import_extra_parts", text="Import Extra Parts")
         folder_box.prop(scene, "neox_remote_import_sockets", text="Import Sockets")
         if scene.neox_remote_import_sockets:
             folder_box.prop(scene, "neox_socket_filters_enabled", text="Socket Filters")

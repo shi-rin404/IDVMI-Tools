@@ -29,6 +29,7 @@ def unregister_props():
         lambda: delattr(bpy.types.Scene, "neox_mesh_selector"),
         lambda: delattr(bpy.types.Scene, "neox_mesh_import_source"),
         lambda: delattr(bpy.types.Scene, "neox_remote_gim_path"),
+        lambda: delattr(bpy.types.Scene, "neox_remote_import_extra_parts"),
         lambda: delattr(bpy.types.Scene, "neox_remote_import_sockets"),
         lambda: delattr(bpy.types.Scene, "neox_socket_filters_enabled"),
         lambda: delattr(bpy.types.Scene, "neox_socket_filter_bone_names"),

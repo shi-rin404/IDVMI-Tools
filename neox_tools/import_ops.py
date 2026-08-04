@@ -1,4 +1,5 @@
 from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
+from .coordinate_axes import GAME_TO_BLENDER, NEOX_TO_BLENDER_BONE_AXES
 from .remote_import import RemoteMaterialPackage, build_remote_material_package, _detect_game_root
 import bpy
 from io import BytesIO
@@ -11,15 +12,8 @@ from pathlib import Path
 from mathutils import Matrix, Vector
 from math import isfinite
 from bpy.props import BoolProperty, StringProperty
-from bpy_extras.io_utils import ImportHelper, axis_conversion
+from bpy_extras.io_utils import ImportHelper
 from math import pi
-
-NEOX_TO_BLENDER_BONE_AXES = Matrix((
-    (0.0, 1.0, 0.0, 0.0),
-    (-1.0, 0.0, 0.0, 0.0),
-    (0.0, 0.0, 1.0, 0.0),
-    (0.0, 0.0, 0.0, 1.0),
-))
 
 SKIN_NAME_PATTERN = r"separate_dir[\\/](\w+_[cde]_\w+)[\\/].*?\.gim"
 SKIN_PATH_PATTERN_SURVIVOR = (
@@ -219,6 +213,21 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
             package,
             import_sockets=context.scene.neox_remote_import_sockets,
         ):
+            if context.scene.neox_remote_import_extra_parts:
+                from .extra_part_import import import_extra_parts_for_remote_gim
+
+                imported_extra_parts = import_extra_parts_for_remote_gim(
+                    main_package=package,
+                    cache_root=cache_root,
+                    operator=self,
+                    parse_mesh=_parse_neox_mesh,
+                    import_model=import_per_material,
+                )
+                if imported_extra_parts:
+                    self.report(
+                        {'INFO'},
+                        f"Imported {len(imported_extra_parts)} extra part(s)",
+                    )
             for warning in package.warnings[:8]:
                 self.report({'WARNING'}, warning)
             if len(package.warnings) > 8:
@@ -902,10 +911,7 @@ def import_per_material(
 
         # --- Axis conversation ---
         log.write("Performing axis conversion...\n"); log.flush()
-        M_game_to_blender = axis_conversion(
-            from_forward='Z', from_up='Y',   # game
-            to_forward='-Y',   to_up='Z'      # blender
-        ).to_4x4()
+        M_game_to_blender = GAME_TO_BLENDER
         log.write("Axis conversion done.\n"); log.flush()
 
         # -- Armature --

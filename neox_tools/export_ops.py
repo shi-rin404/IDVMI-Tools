@@ -4,24 +4,14 @@ import bmesh
 from mathutils import Matrix, Vector
 from bpy.props import StringProperty
 from bpy_extras.io_utils import ExportHelper, axis_conversion
+from .coordinate_axes import (
+    BLENDER_BONE_TO_NEOX_LOCAL,
+    BLENDER_TO_GAME,
+    GAME_TO_BLENDER,
+    NEOX_LOCAL_TO_BLENDER_BONE,
+)
 from .export_utils import writeuint8, writeuint16, writeuint32, writefloat
 
-
-GAME_TO_BLENDER = axis_conversion(
-    from_forward="Z",
-    from_up="Y",
-    to_forward="-Y",
-    to_up="Z",
-).to_4x4()
-BLENDER_TO_GAME = GAME_TO_BLENDER.inverted()
-
-NEOX_LOCAL_TO_BLENDER_BONE = Matrix((
-    (0.0, -1.0, 0.0, 0.0),
-    (1.0, 0.0, 0.0, 0.0),
-    (0.0, 0.0, 1.0, 0.0),
-    (0.0, 0.0, 0.0, 1.0),
-))
-BLENDER_BONE_TO_NEOX_LOCAL = NEOX_LOCAL_TO_BLENDER_BONE.inverted()
 
 MATRIX_ROUNDTRIP_HARD_LIMIT = 1.0e-4
 COLLIDER_WEIGHT_THRESHOLD = 0.5
