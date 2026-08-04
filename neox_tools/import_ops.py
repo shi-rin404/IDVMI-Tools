@@ -1,13 +1,14 @@
 from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
-from .remote_import import RemoteMaterialPackage, build_remote_material_package
+from .remote_import import RemoteMaterialPackage, build_remote_material_package, _detect_game_root
 import bpy
 from io import BytesIO
 import json
 import os
+import re
 import statistics
 import struct
 from pathlib import Path
-from mathutils import Matrix, Vector
+from mathutils import Matrix, Quaternion, Vector
 from math import isfinite
 from bpy.props import BoolProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper, axis_conversion
@@ -19,6 +20,102 @@ NEOX_TO_BLENDER_BONE_AXES = Matrix((
     (0.0, 0.0, 1.0, 0.0),
     (0.0, 0.0, 0.0, 1.0),
 ))
+
+GAME_TO_BLENDER = axis_conversion(
+    from_forward='Z',
+    from_up='Y',
+    to_forward='-Y',
+    to_up='Z',
+).to_4x4()
+
+SKIN_NAME_PATTERN = r"separate_dir[\\/](\w+_[cde]_\w+)[\\/].*?\.gim"
+SKIN_PATH_PATTERN_SURVIVOR = (
+    r"chr[\\/]player[\\/](?:dm65_survivor_girl|dm65_survivor_m|h55_survivor_puppet|dm65_survivor_w)"
+    r"[\\/](?:(?:h55|dm65)_survivor_(?:(?:m|w)_)?\w+)[\\/]separate_dir[\\/]SKINNAME[\\/]SKINNAME.gim"
+)
+SKIN_PATH_PATTERN_HUNTER = r"chr[\\/]boss[\\/].*?[\\/]separate_dir[\\/]SKINNAME[\\/]SKINNAME.gim"
+SKIN_ITEM_NAME_PATTERN = r"chr[\\/]prop[\\/](?:h55_pendant_\w+)[\\/]separate_dir[\\/]SKINNAME[\\/]SKINNAME.gim"
+GENERIC_SKIN_PATH_BRUTE_FORCE = r"chr[\\/]TYPEHINT[\\/](?:.*?[\\/])+separate_dir[\\/](?:\w+[\\/])+(?:\w+_[cde]_[^_]+)\.gim"
+GRAB_SKIN_PATTERNS = {
+    "CHARACTER": r"chr[\\/](?:player|boss)[\\/](?:\w+[\\/])+\w+\.gim",
+    "SURVIVOR": r"chr[\\/]player[\\/](?:\w+[\\/])+\w+\.gim",
+    "HUNTER": r"chr[\\/]boss[\\/](?:\w+[\\/])+\w+\.gim",
+    "ITEM": r"chr[\\/]prop[\\/](?:\w+[\\/])+\w+\.gim",
+    "ACCESSORY": r"chr[\\/]guajian[\\/](?:\w+[\\/])+\w+\.gim",
+    "ALL": r"chr[\\/](?:\w+[\\/])+\w+\.gim",
+}
+
+
+def _game_log_path() -> Path:
+    return _detect_game_root() / "log.txt"
+
+
+def _fix_grabbed_skin_path(potential_path: str | None) -> str | None:
+    if potential_path is None:
+        return None
+
+    if "separate_dir" not in potential_path:
+        return potential_path
+
+    match = re.search(SKIN_NAME_PATTERN, potential_path)
+    if match is None:
+        return potential_path
+
+    skin_name = match.group(1)
+    type_hint = None
+    if "player" in potential_path:
+        type_hint = "player"
+        resolved = grab_current_skin_from_running_game(
+            "SURVIVOR",
+            re.compile(SKIN_PATH_PATTERN_SURVIVOR.replace("SKINNAME", skin_name)),
+        )
+    elif "boss" in potential_path:
+        type_hint = "boss"
+        resolved = grab_current_skin_from_running_game(
+            "HUNTER",
+            re.compile(SKIN_PATH_PATTERN_HUNTER.replace("SKINNAME", skin_name)),
+        )
+    elif "prop" in potential_path:
+        type_hint = "prop"
+        resolved = grab_current_skin_from_running_game(
+            "ITEM",
+            re.compile(SKIN_ITEM_NAME_PATTERN.replace("SKINNAME", skin_name)),
+        )
+    else:
+        return potential_path
+
+    if resolved is None and type_hint is not None:
+        return grab_current_skin_from_running_game(
+            "ALL",
+            re.compile(GENERIC_SKIN_PATH_BRUTE_FORCE.replace("TYPEHINT", type_hint)),
+        )
+    return resolved
+
+
+def grab_current_skin_from_running_game(search_mode: str = "CHARACTER", pattern: re.Pattern | None = None) -> str | None:
+    search_mode = search_mode.upper()
+    if search_mode not in GRAB_SKIN_PATTERNS:
+        raise ValueError(f"Unsupported skin grab search mode: {search_mode}")
+
+    log_path = _game_log_path()
+    if not log_path.is_file():
+        raise FileNotFoundError(f"Identity V log file was not found: {log_path}")
+
+    raw_pattern = GRAB_SKIN_PATTERNS[search_mode] if pattern is None else pattern
+    matches = re.findall(raw_pattern, log_path.read_text(encoding="utf-8", errors="ignore"))
+    if not matches:
+        return None
+
+    last_match = matches[-1]
+    if isinstance(last_match, tuple):
+        last_match = next((part for part in last_match if part), "")
+    if not last_match:
+        return None
+
+    if pattern is None and "guajian" not in last_match:
+        return _fix_grabbed_skin_path(last_match)
+    return str(last_match).replace("\\", "/")
+
 
 class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
     bl_idname = "idvmi_neox.neox_importer"
@@ -90,6 +187,8 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
 
         obj_name = os.path.basename(mesh_path).rsplit(".", 1)[0]
         if import_per_material(model, obj_name, self):
+            context.scene.neox_mesh_selector = ""
+            self.filepath = ""
             self.report({'INFO'}, f"Import OK -> {mesh_path}")
             return {'FINISHED'}
         else:
@@ -120,20 +219,102 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
 
         context.scene.neox_remote_gim_path = gim_asset_path
         obj_name = os.path.basename(package.mesh_asset_path).rsplit(".", 1)[0]
-        if import_per_material(
+        main_armature = import_per_material(
             model,
             obj_name,
             self,
             package,
             import_sockets=context.scene.neox_remote_import_sockets,
-        ):
+            return_imported_armature=True,
+        )
+        if main_armature:
+            extra_import_count = 0
+            if context.scene.neox_remote_import_extra_parts:
+                extra_import_count = self._import_extra_remote_parts(
+                    context,
+                    package,
+                    cache_root,
+                    main_armature,
+                )
             for warning in package.warnings[:8]:
                 self.report({'WARNING'}, warning)
             if len(package.warnings) > 8:
                 self.report({'WARNING'}, f"{len(package.warnings) - 8} more remote import warning(s)")
-            self.report({'INFO'}, f"Remote import OK -> {package.mesh_asset_path}")
+            context.scene.neox_remote_gim_path = ""
+            if extra_import_count:
+                self.report(
+                    {'INFO'},
+                    f"Remote import OK -> {package.mesh_asset_path}; extra parts={extra_import_count}",
+                )
+            else:
+                self.report({'INFO'}, f"Remote import OK -> {package.mesh_asset_path}")
             return {'FINISHED'}
         return {'CANCELLED'}
+
+    def _import_extra_remote_parts(self, context, package: RemoteMaterialPackage, cache_root: Path, main_armature) -> int:
+        imported_count = 0
+        for extra_part in package.extra_part_gim_paths:
+            extra_gim_path = str(extra_part.get("gim_path", "")).strip()
+            if not extra_gim_path:
+                continue
+            try:
+                extra_package = build_remote_material_package(extra_gim_path, cache_root)
+                extra_model = _parse_neox_mesh(BytesIO(extra_package.mesh_data), self)
+                if extra_model == {}:
+                    self.report({'WARNING'}, f"Extra part model can't be decoded: {extra_gim_path}")
+                    continue
+
+                extra_obj_name = os.path.basename(extra_package.mesh_asset_path).rsplit(".", 1)[0]
+                extra_armature = import_per_material(
+                    extra_model,
+                    extra_obj_name,
+                    self,
+                    extra_package,
+                    import_sockets=False,
+                    return_imported_armature=True,
+                )
+                if extra_armature:
+                    _apply_extra_part_bounding_bone_from_socket(
+                        extra_armature,
+                        main_armature,
+                        extra_package.bounding_bone_name,
+                        extra_part.get("socket", {}),
+                        self,
+                    )
+                    imported_count += 1
+                    for warning in extra_package.warnings[:4]:
+                        self.report({'WARNING'}, f"{extra_gim_path}: {warning}")
+                    if len(extra_package.warnings) > 4:
+                        self.report(
+                            {'WARNING'},
+                            f"{extra_gim_path}: {len(extra_package.warnings) - 4} more warning(s)",
+                        )
+                else:
+                    self.report({'WARNING'}, f"Extra part import failed: {extra_gim_path}")
+            except Exception as exc:
+                self.report({'WARNING'}, f"Extra part import failed: {extra_gim_path}: {exc}")
+        return imported_count
+
+
+class IDVMI_OT_Grab_Current_Skin_From_Game(bpy.types.Operator):
+    bl_idname = "idvmi_neox.grab_current_skin_from_game"
+    bl_label = "Grab Skin From Running Game"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            gim_asset_path = grab_current_skin_from_running_game()
+        except Exception as exc:
+            self.report({'ERROR'}, f"Grab skin failed: {exc}")
+            return {'CANCELLED'}
+
+        if not gim_asset_path:
+            self.report({'WARNING'}, "No skin path found in the game log")
+            return {'CANCELLED'}
+
+        context.scene.neox_remote_gim_path = gim_asset_path
+        self.report({'INFO'}, f"Grabbed skin path: {gim_asset_path}")
+        return {'FINISHED'}
 
 
 def menu_func_import(self, context):
@@ -695,6 +876,125 @@ def _serialize_remote_sockets(
     return len(unresolved_sockets)
 
 
+def _vector(values, default) -> Vector:
+    if not isinstance(values, (list, tuple)) or len(values) != len(default):
+        return Vector(default)
+    try:
+        return Vector(tuple(float(item) for item in values))
+    except (TypeError, ValueError):
+        return Vector(default)
+
+
+def _socket_local_matrix(socket: dict) -> Matrix:
+    location = _vector(socket.get("local_position"), (0.0, 0.0, 0.0))
+    scale = _vector(socket.get("local_scale"), (1.0, 1.0, 1.0))
+    rotation_values = socket.get("local_rotation_xyzw")
+
+    if isinstance(rotation_values, (list, tuple)) and len(rotation_values) == 4:
+        try:
+            rotation = Quaternion(
+                (
+                    float(rotation_values[3]),
+                    float(rotation_values[0]),
+                    float(rotation_values[1]),
+                    float(rotation_values[2]),
+                )
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid socket local_rotation_xyzw values: {rotation_values}") from exc
+    else:
+        rotation = Quaternion((1.0, 0.0, 0.0, 0.0))
+
+    rotation.normalize()
+    rotation_matrix = GAME_TO_BLENDER @ rotation.to_matrix().to_4x4()
+    _rotation_location, rotation, _rotation_scale = rotation_matrix.decompose()
+    rotation.normalize()
+    return Matrix.LocRotScale(location, rotation, scale)
+
+
+def _socket_world_matrix(armature_obj, socket: dict) -> Matrix:
+    local_socket = _socket_local_matrix(socket)
+    binding_bone = str(socket.get("binding_bone", "")).strip()
+    if binding_bone:
+        bone = armature_obj.data.bones.get(binding_bone)
+        if bone is None:
+            raise KeyError(binding_bone)
+        bone_local_socket = NEOX_TO_BLENDER_BONE_AXES.inverted_safe() @ local_socket
+        return armature_obj.matrix_world @ bone.matrix_local @ bone_local_socket
+    return armature_obj.matrix_world @ GAME_TO_BLENDER @ local_socket
+
+
+def _socket_delta_matrix(socket: dict) -> Matrix:
+    local_socket = _socket_local_matrix(socket)
+    binding_bone = str(socket.get("binding_bone", "")).strip()
+    if binding_bone:
+        return NEOX_TO_BLENDER_BONE_AXES.inverted_safe() @ local_socket
+    return GAME_TO_BLENDER @ local_socket
+
+
+def _binding_bone_world_matrix(armature_obj, socket: dict) -> Matrix:
+    binding_bone = str(socket.get("binding_bone", "")).strip()
+    if not binding_bone:
+        return armature_obj.matrix_world.copy()
+
+    pbone = armature_obj.pose.bones.get(binding_bone)
+    if pbone is None:
+        raise KeyError(binding_bone)
+    return armature_obj.matrix_world @ pbone.matrix
+
+
+def _set_pose_bone_transform_from_pose_matrix(armature_obj, pose_bone, pose_matrix: Matrix) -> None:
+    basis_matrix = armature_obj.convert_space(
+        pose_bone=pose_bone,
+        matrix=pose_matrix,
+        from_space='POSE',
+        to_space='LOCAL',
+    )
+    location, rotation, scale = basis_matrix.decompose()
+    rotation.normalize()
+
+    pose_bone.rotation_mode = 'QUATERNION'
+    pose_bone.location = location
+    pose_bone.rotation_quaternion = rotation
+    pose_bone.scale = scale
+
+
+def _apply_extra_part_bounding_bone_from_socket(
+    extra_armature_obj,
+    main_armature_obj,
+    bounding_bone_name: str,
+    socket: dict,
+    operator,
+) -> None:
+    bounding_bone_name = str(bounding_bone_name or "").strip()
+    if not bounding_bone_name:
+        operator.report(
+            {'WARNING'},
+            "Extra part GIM has no BoundingBoneName; socket transform was not applied.",
+        )
+        return
+
+    pbone = extra_armature_obj.pose.bones.get(bounding_bone_name)
+    if pbone is None:
+        operator.report(
+            {'WARNING'},
+            f"Extra part BoundingBoneName was not found in imported armature: {bounding_bone_name}",
+        )
+        return
+
+    try:
+        base_world = _binding_bone_world_matrix(main_armature_obj, socket)
+        target_world = base_world @ _socket_delta_matrix(socket)
+        target_pose = extra_armature_obj.matrix_world.inverted_safe() @ target_world
+        _set_pose_bone_transform_from_pose_matrix(extra_armature_obj, pbone, target_pose)
+        bpy.context.view_layer.update()
+    except KeyError as exc:
+        operator.report(
+            {'WARNING'},
+            f"Extra part socket binding bone was not found, bounding bone not moved: {exc}",
+        )
+
+
 def _select_active_armature(armature_obj) -> None:
     try:
         if bpy.context.object is not None and bpy.context.object.mode != 'OBJECT':
@@ -738,6 +1038,7 @@ def import_per_material(
     remote_material_package: RemoteMaterialPackage | None = None,
     *,
     import_sockets: bool = False,
+    return_imported_armature: bool = False,
 ):
     root = os.path.dirname(__file__)
     log_file = os.path.join(root, "import_per_material_log.txt")
@@ -1369,5 +1670,6 @@ def import_per_material(
                 )
 
         print(f"Successfully imported model: {obj_name}")
-        # return armature_obj
+        if return_imported_armature:
+            return armature_obj
         return True

@@ -25,9 +25,11 @@ class RemoteMaterialPackage:
     gim_asset_path: str
     mesh_asset_path: str
     mesh_data: bytes
+    bounding_bone_name: str = ""
     materials: list[dict[str, str]] = field(default_factory=list)
     submesh_mtl_indices: dict[int, int] = field(default_factory=dict)
     sockets: list[dict] = field(default_factory=list)
+    extra_part_gim_paths: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -41,10 +43,17 @@ def build_remote_material_package(gim_asset_path: str, cache_root: Path) -> Remo
     mtg_asset_path = _replace_extension(gim_asset_path, ".mtg")
 
     mesh_data = asset_index.extract(mesh_asset_path).data
-    gim_root = _xml_root_from_bytes(asset_index.extract(gim_asset_path).data, ".gim", gim_asset_path)
+    extracted_gim = asset_index.extract(gim_asset_path)
+    gim_root = _xml_root_from_bytes(extracted_gim.data, ".gim", gim_asset_path)
     mtg_root = _xml_root_from_bytes(asset_index.extract(mtg_asset_path).data, ".mtg", mtg_asset_path)
 
     warnings: list[str] = []
+    extra_part_gim_paths = _extra_part_gim_paths_from_gim(
+        gim_root,
+        extracted_gim.request,
+        asset_index,
+        warnings,
+    )
     mtl_paths = _mtl_paths_from_mtg(mtg_root)
     materials: list[dict[str, str]] = []
     for mtl_path in mtl_paths:
@@ -88,9 +97,11 @@ def build_remote_material_package(gim_asset_path: str, cache_root: Path) -> Remo
         gim_asset_path=gim_asset_path,
         mesh_asset_path=mesh_asset_path,
         mesh_data=mesh_data,
+        bounding_bone_name=gim_root.attrib.get("BoundingBoneName", "").strip(),
         materials=materials,
         submesh_mtl_indices=_submesh_mtl_indices_from_gim(gim_root),
         sockets=_socket_data_from_gim(gim_root),
+        extra_part_gim_paths=extra_part_gim_paths,
         warnings=warnings,
     )
 
@@ -364,6 +375,157 @@ def _submesh_mtl_indices_from_gim(root: ET.Element) -> dict[int, int]:
     return result
 
 
+def _asset_parent(raw_asset_path: str) -> str:
+    return posixpath.dirname(_normalize_asset_path(raw_asset_path))
+
+
+def _skin_name_from_gim(filename: str) -> str | None:
+    match = re.fullmatch(r"[a-z]+[cde]*_([a-z]+)\.gim", filename.lower())
+    if match:
+        return match.group(1)
+    match = re.fullmatch(r"[a-z]+_[a-z]+_([a-z]+)\.gim", filename.lower())
+    if match:
+        return match.group(1)
+    return None
+
+
+def _asset_exists(asset_index, asset_path: str) -> bool:
+    try:
+        asset_index.parse(asset_path)
+        asset_index.extract(asset_path)
+    except Exception:
+        return False
+    return True
+
+
+def _append_unique_gim_path(seen: set[str], asset_path: str) -> str | None:
+    normalized = _normalize_asset_path(asset_path)
+    if not normalized.lower().endswith(".gim"):
+        return None
+    key = normalized.lower()
+    if key in seen:
+        return None
+    seen.add(key)
+    return normalized
+
+
+def _socket_data_from_element(element: ET.Element) -> dict:
+    attributes = dict(element.attrib)
+    binding_bone = attributes.get("BindingBone", "").strip()
+    return {
+        "tag": element.tag,
+        "name": attributes.get("Name", ""),
+        "parent_type": "bone" if binding_bone else "armature_origin",
+        "binding_bone": binding_bone,
+        "bind_type": attributes.get("BindType", ""),
+        "binding_flag": attributes.get("BindingFlag", ""),
+        "local_position": _float_list(attributes.get("LocalPosition", "")),
+        "local_rotation_xyzw": _float_list(attributes.get("LocalRotation", "")),
+        "local_scale": _float_list(attributes.get("LocalScale", "")),
+        "attributes": attributes,
+        "objects": [
+            {
+                "tag": child.tag,
+                "attributes": dict(child.attrib),
+            }
+            for child in element
+        ],
+    }
+
+
+def _append_unique_extra_part(result: list[dict], seen: set[str], asset_path: str, socket: ET.Element) -> None:
+    normalized = _append_unique_gim_path(seen, asset_path)
+    if normalized is None:
+        return
+    result.append(
+        {
+            "gim_path": normalized,
+            "socket": _socket_data_from_element(socket),
+        }
+    )
+
+
+def _extra_part_gim_paths_from_gim(root: ET.Element, parsed_gim, asset_index, warnings: list[str]) -> list[dict]:
+    result: list[dict] = []
+    seen: set[str] = {
+        _normalize_asset_path(parsed_gim.raw_path).lower(),
+        _normalize_asset_path(f"{parsed_gim.archive.prefix}/{parsed_gim.normalized_path}").lower(),
+    }
+
+    _collect_existing_socket_object_uris(root, parsed_gim.raw_path, asset_index, result, seen, warnings)
+    _collect_predicted_socket_object_paths(root, parsed_gim, asset_index, result, seen, warnings)
+    return result
+
+
+def _collect_existing_socket_object_uris(
+    root: ET.Element,
+    base_asset_path: str,
+    asset_index,
+    result: list[dict],
+    seen: set[str],
+    warnings: list[str],
+) -> None:
+    for socket in [element for element in root.iter() if re.fullmatch(r"Socket_\d+", element.tag)]:
+        for element in socket.iter("Object"):
+            uri = element.attrib.get("Uri", "").strip()
+            if not uri.lower().endswith(".gim"):
+                continue
+            resolved = _resolve_reference(asset_index, uri, base_asset_path)
+            if _asset_exists(asset_index, resolved):
+                _append_unique_extra_part(result, seen, resolved, socket)
+            else:
+                warnings.append(f"Socket object GIM not found: {resolved}")
+
+
+def _collect_predicted_socket_object_paths(
+    root: ET.Element,
+    parsed_gim,
+    asset_index,
+    result: list[dict],
+    seen: set[str],
+    warnings: list[str],
+) -> None:
+    gim_name = posixpath.splitext(posixpath.basename(parsed_gim.normalized_path))[0]
+    gim_folder = f"{parsed_gim.archive.prefix}/{_asset_parent(parsed_gim.normalized_path)}"
+    sockets = [element for element in root.iter() if re.fullmatch(r"Socket_\d+", element.tag)]
+
+    updates = 0
+    for socket in sockets:
+        socket_name = socket.attrib.get("Name", "")
+        direct_match = re.fullmatch(rf"{re.escape(gim_name)}_([a-z]+)", socket_name)
+        if not direct_match:
+            continue
+        object_name = direct_match.group(1)
+        target_path = f"{gim_folder}/{gim_name}_{object_name}.gim"
+        if _asset_exists(asset_index, target_path):
+            _append_unique_extra_part(result, seen, target_path, socket)
+            updates += 1
+        else:
+            warnings.append(f"Predicted socket object GIM not found: {socket_name}: {target_path}")
+
+    if updates:
+        return
+
+    skin_name = _skin_name_from_gim(posixpath.basename(parsed_gim.normalized_path))
+    if not skin_name:
+        return
+    for socket in sockets:
+        socket_name = socket.attrib.get("Name", "")
+        skin_first_match = re.fullmatch(rf"(?:const_)?{re.escape(skin_name)}_([a-z]+)", socket_name)
+        object_first_match = re.fullmatch(rf"([a-z]+)_{re.escape(skin_name)}", socket_name)
+        if skin_first_match:
+            object_name = skin_first_match.group(1)
+        elif object_first_match:
+            object_name = object_first_match.group(1)
+        else:
+            continue
+        target_path = f"{gim_folder}/{gim_name}_{object_name}.gim"
+        if _asset_exists(asset_index, target_path):
+            _append_unique_extra_part(result, seen, target_path, socket)
+        else:
+            warnings.append(f"Predicted socket object GIM not found: {socket_name}: {target_path}")
+
+
 def _float_list(value: str) -> list[float]:
     if not value:
         return []
@@ -380,30 +542,7 @@ def _socket_data_from_gim(root: ET.Element) -> list[dict]:
 
     sockets: list[dict] = []
     for element in socket_objects:
-        attributes = dict(element.attrib)
-        binding_bone = attributes.get("BindingBone", "").strip()
-
-        sockets.append(
-            {
-                "tag": element.tag,
-                "name": attributes.get("Name", ""),
-                "parent_type": "bone" if binding_bone else "armature_origin",
-                "binding_bone": binding_bone,
-                "bind_type": attributes.get("BindType", ""),
-                "binding_flag": attributes.get("BindingFlag", ""),
-                "local_position": _float_list(attributes.get("LocalPosition", "")),
-                "local_rotation_xyzw": _float_list(attributes.get("LocalRotation", "")),
-                "local_scale": _float_list(attributes.get("LocalScale", "")),
-                "attributes": attributes,
-                "objects": [
-                    {
-                        "tag": child.tag,
-                        "attributes": dict(child.attrib),
-                    }
-                    for child in element
-                ],
-            }
-        )
+        sockets.append(_socket_data_from_element(element))
 
     return sockets
 

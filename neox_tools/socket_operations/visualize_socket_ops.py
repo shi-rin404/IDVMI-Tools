@@ -294,6 +294,9 @@ def _socket_local_matrix(socket: dict) -> Matrix:
         rotation = Quaternion((1.0, 0.0, 0.0, 0.0))
 
     rotation.normalize()
+    rotation_matrix = GAME_TO_BLENDER @ rotation.to_matrix().to_4x4()
+    _rotation_location, rotation, _rotation_scale = rotation_matrix.decompose()
+    rotation.normalize()
     return Matrix.LocRotScale(location, rotation, scale)
 
 

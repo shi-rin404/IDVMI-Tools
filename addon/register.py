@@ -223,6 +223,12 @@ def register_props():
         default=""
     )
 
+    bpy.types.Scene.neox_remote_import_extra_parts = bpy.props.BoolProperty(
+        name="Import Extra Parts",
+        description="Import socket object dependencies from the remote .gim as separate meshes",
+        default=True
+    )
+
     bpy.types.Scene.neox_remote_import_sockets = bpy.props.BoolProperty(
         name="Import Sockets",
         description="Serialize socket metadata from the remote .gim onto the imported armature",
