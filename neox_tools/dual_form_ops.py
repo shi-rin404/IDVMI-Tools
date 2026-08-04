@@ -256,14 +256,9 @@ def _resolve_animation_reference(
     animation_reference: str,
 ) -> str:
     normalized = _normalize_slashes(animation_reference).strip("/")
-    if normalized.lower().startswith("mod/"):
+    lowered = normalized.lower()
+    if lowered.startswith("chr/") or lowered.startswith("mod/"):
         return normalized
-
-    try:
-        asset_index.parse(normalized)
-        return normalized
-    except Exception:
-        pass
 
     base_dir = posixpath.dirname(animconfig_reference.strip("/"))
     return posixpath.normpath(posixpath.join(base_dir, normalized)).replace("\\", "/")
@@ -664,15 +659,6 @@ def _parent_prefixed_reference(reference: str) -> str:
     return posixpath.normpath(posixpath.join("..", reference)).replace("\\", "/")
 
 
-def _wrapper_child_reference(reference: str) -> str:
-    reference = str(reference).strip().replace("\\", "/")
-    if not reference:
-        return reference
-    if reference.lower().startswith(("chr/", "mod/", "scene/")):
-        return reference
-    return _parent_prefixed_reference(reference)
-
-
 def _remove_extra_wrapper_submeshes(wrapper_root: ET.Element) -> None:
     submesh = wrapper_root.find("SubMesh")
     if submesh is None:
@@ -708,17 +694,6 @@ def _remove_extra_wrapper_submeshes(wrapper_root: ET.Element) -> None:
 def _remove_child(parent: ET.Element, child: ET.Element | None) -> None:
     if child is not None:
         parent.remove(child)
-
-
-def _remove_loading_four_socket_objects(root: ET.Element) -> None:
-    socket_objects = root.find("SocketObject")
-    if socket_objects is None:
-        return
-
-    for socket in socket_objects:
-        for child in list(socket):
-            if child.tag == "Object" and child.attrib.get("Loading", "").strip() == "4":
-                socket.remove(child)
 
 
 def _write_wrapper_material_files(wrapper_dir: Path) -> None:
@@ -817,8 +792,6 @@ def _resolve_dependency_reference(asset_index, animation_asset_reference: str, d
     normalized = _normalize_slashes(dependency_reference).strip("/")
     if not normalized.lower().endswith(".cpdanimation"):
         normalized = _replace_extension(normalized, ".cpdanimation")
-    if normalized.lower().startswith("mod/"):
-        return normalized
 
     try:
         asset_index.parse(normalized)
@@ -831,32 +804,84 @@ def _resolve_dependency_reference(asset_index, animation_asset_reference: str, d
     ).replace("\\", "/")
 
 
-def _write_wrapper_animation_clone(
+def _write_rootless_cpdanimation(
+    source_path: Path,
+    output_path: Path,
+    skeleton_path: str,
+    root_bone_name: str,
+) -> list[str]:
+    from .animation_import_ops import parse_cpdanimation
+
+    parse_warnings: list[str] = []
+    cpd_animation = parse_cpdanimation(
+        str(source_path),
+        allow_unsorted_keys=True,
+        warnings=parse_warnings,
+    )
+    root_track_found = False
+    for track in cpd_animation.tracks:
+        if track.name != root_bone_name:
+            continue
+        track.position_keys = []
+        track.scale_keys = []
+        track.rotation_keys = []
+        root_track_found = True
+        break
+    if not root_track_found:
+        raise ValueError(f"Root bone track was not found in CPD animation: {root_bone_name}")
+
+    header = cpd_animation.header
+    head = pack_section(
+        b"HEAD",
+        build_head_payload(
+            header.fps,
+            header.duration,
+            header.loop,
+            header.accumulation_flags,
+        ),
+    )
+    data = pack_section(b"DATA", build_data_payload(cpd_animation.tracks))
+    name = pack_section(b"NAME", build_name_payload(cpd_animation.name, [track.name for track in cpd_animation.tracks]))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_bytes(build_file_bytes(skeleton_path, head, data, name, None))
+    return parse_warnings
+
+
+def _report_skipped_cpdanimation(operator, path: Path, error: Exception) -> None:
+    operator.report({"WARNING"}, f"{path}: {error}")
+    operator.report({"WARNING"}, f"Skipping the {path.name}")
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as cleanup_error:
+        operator.report(
+            {"WARNING"},
+            f"Could not remove skipped {path.name}: {cleanup_error}",
+        )
+
+
+def _write_wrapper_animation_copy(
     asset_index,
+    operator,
     wrapper_animconfig_path: Path,
     animation_folder: Path,
     main_gim_path: Path,
     source_animconfig_reference: str,
     animation_reference: str,
     animation_name: str,
+    skeleton_documents_res_path: str,
+    root_bone_name: str,
     used_file_names: set[str],
     dependency_cache: dict[str, str],
     used_dependency_file_names: set[str],
-) -> str:
+    skipped_dependency_references: set[str],
+) -> str | None:
     animation_asset_reference = _resolve_animation_reference(
         asset_index,
         source_animconfig_reference,
         animation_reference,
     )
-    animation_stem = _safe_file_stem(animation_name, Path(animation_asset_reference).stem or "animation")
-    animation_file_name = f"{animation_stem}.animation"
-    counter = 1
-    while animation_file_name.lower() in used_file_names:
-        animation_file_name = f"{animation_stem}_{counter}.animation"
-        counter += 1
-    used_file_names.add(animation_file_name.lower())
-
-    output_animation_path = animation_folder / animation_file_name
     animation_text, animation_asset_reference = _load_text_asset(
         asset_index,
         main_gim_path,
@@ -867,6 +892,15 @@ def _write_wrapper_animation_clone(
     if not dependency_references:
         raise ValueError(f"Animation has no usable CPD dependencies: {animation_asset_reference}")
 
+    animation_stem = _safe_file_stem(animation_name, Path(animation_asset_reference).stem or "animation")
+    animation_file_name = f"{animation_stem}.animation"
+    counter = 1
+    while animation_file_name.lower() in used_file_names:
+        animation_file_name = f"{animation_stem}_{counter}.animation"
+        counter += 1
+    used_file_names.add(animation_file_name.lower())
+
+    output_animation_path = animation_folder / animation_file_name
     local_dependencies: list[str] = []
     for dependency_reference in dependency_references:
         cpd_reference = _resolve_dependency_reference(
@@ -874,6 +908,8 @@ def _write_wrapper_animation_clone(
             animation_asset_reference,
             dependency_reference,
         )
+        if cpd_reference in skipped_dependency_references:
+            continue
 
         cached_dependency = dependency_cache.get(cpd_reference)
         if cached_dependency is not None:
@@ -902,9 +938,31 @@ def _write_wrapper_animation_clone(
         output_cpdanimation_path = animation_folder / dependency_file_name
         output_cpdanimation_path.parent.mkdir(parents=True, exist_ok=True)
         output_cpdanimation_path.write_bytes(cpd_data)
+        try:
+            parse_warnings = _write_rootless_cpdanimation(
+                output_cpdanimation_path,
+                output_cpdanimation_path,
+                _relative_from_file(output_cpdanimation_path, skeleton_documents_res_path),
+                root_bone_name,
+            )
+        except Exception as exc:
+            skipped_dependency_references.add(cpd_reference)
+            _report_skipped_cpdanimation(operator, output_cpdanimation_path, exc)
+            continue
+        for warning in parse_warnings[:3]:
+            operator.report({"WARNING"}, f"{output_cpdanimation_path.name}: {warning}")
+        if len(parse_warnings) > 3:
+            operator.report(
+                {"WARNING"},
+                f"{output_cpdanimation_path.name}: {len(parse_warnings) - 3} additional unsorted key warning(s)",
+            )
         local_dependency = _documents_res_relative(output_cpdanimation_path)
         dependency_cache[cpd_reference] = local_dependency
         local_dependencies.append(local_dependency)
+
+    if not local_dependencies:
+        operator.report({"WARNING"}, f"Skipping the {output_animation_path.name}")
+        return None
 
     output_animation_path.parent.mkdir(parents=True, exist_ok=True)
     output_animation_path.write_text(
@@ -932,17 +990,25 @@ def _localize_animation_dependencies_text(raw_text: str, dependency_paths: list[
 
 def _write_wrapper_animconfig(
     asset_index,
+    operator,
     wrapper_dir: Path,
     source_animconfig_root: ET.Element,
     source_animconfig_reference: str,
     main_gim_path: Path,
+    skeleton_documents_res_path: str,
+    wrapper_bone_names: list[str],
+    root_bone_name: str,
 ) -> Path:
+    if root_bone_name not in wrapper_bone_names:
+        raise ValueError(f"Wrapper root bone is not present in wrapper bone list: {root_bone_name}")
+
     wrapper_animconfig_path = wrapper_dir / "wrapper.animconfig"
     animation_folder = wrapper_dir / "animations_wrapper"
     wrapper_root = copy.deepcopy(source_animconfig_root)
     used_file_names: set[str] = set()
     dependency_cache: dict[str, str] = {}
     used_dependency_file_names: set[str] = set()
+    skipped_dependency_references: set[str] = set()
     animation_count = 0
     animation_list = wrapper_root.find("./AnimationList")
     if animation_list is None:
@@ -954,18 +1020,25 @@ def _write_wrapper_animconfig(
         file_name = animation.attrib.get("FileName", "").strip()
         if not file_name:
             raise ValueError(f"Wrapper animation entry has no FileName: {name}")
-        wrapper_animation_file = _write_wrapper_animation_clone(
+        wrapper_animation_file = _write_wrapper_animation_copy(
             asset_index,
+            operator,
             wrapper_animconfig_path,
             animation_folder,
             main_gim_path,
             source_animconfig_reference,
             file_name,
             name,
+            skeleton_documents_res_path,
+            root_bone_name,
             used_file_names,
             dependency_cache,
             used_dependency_file_names,
+            skipped_dependency_references,
         )
+        if wrapper_animation_file is None:
+            animation_list.remove(animation)
+            continue
         animation.attrib["FileName"] = wrapper_animation_file
     if animation_count == 0:
         raise ValueError("Wrapper animconfig has no AnimationList/Animation entries")
@@ -980,17 +1053,16 @@ def _write_wrapper_gim(
     source_binary: bool,
     main_gim_path: Path,
     dual_gim_path: Path,
-    wrapper_animconfig_reference: str,
+    wrapper_animconfig_path: Path,
 ) -> None:
     wrapper_root = copy.deepcopy(source_root)
     wrapper_root.attrib.pop("Mesh", None)
     _remove_extra_wrapper_submeshes(wrapper_root)
     _remove_child(wrapper_root, wrapper_root.find("MtgFile"))
-    _remove_loading_four_socket_objects(wrapper_root)
 
     skeleton_value = _file_value(wrapper_root, "SkeletonFile")
     _set_file_value(wrapper_root, "SkeletonFile", _parent_prefixed_reference(skeleton_value))
-    _set_file_value(wrapper_root, "AnimationConfigFile", wrapper_animconfig_reference)
+    _set_file_value(wrapper_root, "AnimationConfigFile", wrapper_animconfig_path.name)
 
     _add_socket_object(wrapper_root, main_gim_path)
     _add_socket_object(wrapper_root, dual_gim_path)
@@ -1004,14 +1076,13 @@ def _build_dual_form_wrapper(
     main_binary: bool,
     source_animconfig_root: ET.Element,
     source_animconfig_reference: str,
-    source_animconfig_gim_reference: str,
-    source_animconfig_remote: bool,
+    skeleton_documents_res_path: str,
     dual_gim_path: Path,
     operator,
 ) -> Path:
     wrapper_dir = main_gim_path.parent / "wrapper"
     wrapper_dir.mkdir(parents=True, exist_ok=True)
-    _write_wrapper_mesh(
+    wrapper_bone_names, wrapper_root_bone_name = _write_wrapper_mesh(
         asset_index,
         main_gim_path,
         main_root,
@@ -1019,16 +1090,17 @@ def _build_dual_form_wrapper(
         operator,
     )
     _write_wrapper_material_files(wrapper_dir)
-    wrapper_animconfig_reference = _wrapper_child_reference(source_animconfig_gim_reference)
-    if not source_animconfig_remote:
-        wrapper_animconfig_path = _write_wrapper_animconfig(
-            asset_index,
-            wrapper_dir,
-            source_animconfig_root,
-            source_animconfig_reference,
-            main_gim_path,
-        )
-        wrapper_animconfig_reference = wrapper_animconfig_path.name
+    wrapper_animconfig_path = _write_wrapper_animconfig(
+        asset_index,
+        operator,
+        wrapper_dir,
+        source_animconfig_root,
+        source_animconfig_reference,
+        main_gim_path,
+        skeleton_documents_res_path,
+        wrapper_bone_names,
+        wrapper_root_bone_name,
+    )
     wrapper_gim_path = wrapper_dir / "wrapper.gim"
     _write_wrapper_gim(
         wrapper_gim_path,
@@ -1036,7 +1108,7 @@ def _build_dual_form_wrapper(
         main_binary,
         main_gim_path,
         dual_gim_path,
-        wrapper_animconfig_reference,
+        wrapper_animconfig_path,
     )
     return wrapper_gim_path
 
@@ -1209,7 +1281,7 @@ class IDVMI_OT_Build_Dual_Form_Skin(bpy.types.Operator):
                 dual_skeleton_local,
             )
 
-            main_anim_root, main_source_ref, main_anim_remote, _main_local = _load_animconfig(
+            main_anim_root, main_source_ref, _main_remote, _main_local = _load_animconfig(
                 asset_index,
                 main_gim_path,
                 main_anim_ref,
@@ -1236,8 +1308,7 @@ class IDVMI_OT_Build_Dual_Form_Skin(bpy.types.Operator):
                 main_binary,
                 main_anim_root,
                 main_source_ref,
-                main_anim_ref,
-                main_anim_remote,
+                main_skeleton,
                 dual_gim_path,
                 self,
             )
