@@ -1,4 +1,10 @@
 import bpy
+import textwrap
+
+
+def _wrapped_label(layout, text: str, width: int = 46):
+    for line in textwrap.wrap(" ".join(str(text).split()), width=width):
+        layout.label(text=line)
 
 def _draw_import_3dm(layout, scene, context, folder_box):
     layout.prop(scene, "migoto_mesh_import_mode")
@@ -90,10 +96,16 @@ def _draw_import_neox_mesh(layout, scene, context, folder_box):
             "idvmi_neox.neox_importer",
             text="Import Remote .gim",
             icon="IMPORT",
+            depress=True,
         )
         op.filepath = ""
         op.use_scene_selector = True
         op.import_source = "remote"
+        folder_box.operator(
+            "idvmi_neox.grab_current_skin_from_game",
+            text="Grab Skin From Running Game",
+            icon="EYEDROPPER",
+        )
         return
 
     folder_box.label(text="NeoX Mesh")
@@ -282,41 +294,44 @@ def _draw_build_dual_form_skin(layout, scene, context, folder_box):
 
 
 def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
-    layout.label(text="Action")
+    _wrapped_label(layout, "Action")
     layout.prop(context.scene, "socket_action_selector", text="")
 
     folder_box = layout.box()
     action = context.scene.socket_action_selector
 
     if action == "copy_socket":
-        folder_box.label(
-            text=(
+        _wrapped_label(
+            folder_box,
+            (
                 "Have both models imported. Select source socket first, then "
                 "select target armature. Proceed."
-            )
+            ),
         )
         folder_box.operator("idvmi_neox.copy_socket_visual", text="Copy Socket", icon="COPYDOWN")
     elif action == "create_socket":
-        folder_box.label(text="Socket Location:")
+        _wrapped_label(folder_box, "Socket Location:")
         folder_box.prop(scene, "socket_create_location", text="")
         if scene.socket_create_location == "object_origin":
-            folder_box.label(
-                text=(
-                    "Switch to Pose Mode. Select the source object from Scene Collection. "
-                    "Select the binding bone from 3D Viewport (If you don't select any bone, "
-                    "it will bind to armature). Confirm."
-                )
+            _wrapped_label(
+                folder_box,
+                (
+                    "Switch to Pose Mode. Select the source object from Scene "
+                    "Collection. Select the binding bone from 3D Viewport "
+                    "(If you don't select any bone, it will bind to armature). Confirm."
+                ),
             )
         else:
-            folder_box.label(
-                text=(
-                    "Switch to Pose Mode. Select the binding bone. Set the cursor binding "
-                    "position. Confirm."
-                )
+            _wrapped_label(
+                folder_box,
+                (
+                    "Switch to Pose Mode. Select the binding bone. Set the "
+                    "cursor binding position. Confirm."
+                ),
             )
         folder_box.operator("idvmi_neox.create_socket", text="Confirm", icon="EMPTY_AXIS")
     elif action == "delete_socket":
-        folder_box.label(text="Select the socket. Confirm.")
+        _wrapped_label(folder_box, "Select the socket. Confirm.")
         folder_box.operator("idvmi_neox.delete_socket", text="Delete Socket", icon="TRASH")
 
 # Dispatch map to replace if/elif chain

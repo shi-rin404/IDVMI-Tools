@@ -696,6 +696,17 @@ def _remove_child(parent: ET.Element, child: ET.Element | None) -> None:
         parent.remove(child)
 
 
+def _remove_loading_four_socket_objects(root: ET.Element) -> None:
+    socket_objects = root.find("SocketObject")
+    if socket_objects is None:
+        return
+
+    for socket in socket_objects:
+        for child in list(socket):
+            if child.tag == "Object" and child.attrib.get("Loading", "").strip() == "4":
+                socket.remove(child)
+
+
 def _write_wrapper_material_files(wrapper_dir: Path) -> None:
     for template_path in (WRAPPER_TEX0_TEMPLATE, WRAPPER_MTL_TEMPLATE, WRAPPER_MTG_TEMPLATE):
         if not template_path.is_file():
@@ -1059,6 +1070,7 @@ def _write_wrapper_gim(
     wrapper_root.attrib.pop("Mesh", None)
     _remove_extra_wrapper_submeshes(wrapper_root)
     _remove_child(wrapper_root, wrapper_root.find("MtgFile"))
+    _remove_loading_four_socket_objects(wrapper_root)
 
     skeleton_value = _file_value(wrapper_root, "SkeletonFile")
     _set_file_value(wrapper_root, "SkeletonFile", _parent_prefixed_reference(skeleton_value))

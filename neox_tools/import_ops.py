@@ -1,9 +1,10 @@
 from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
-from .remote_import import RemoteMaterialPackage, build_remote_material_package
+from .remote_import import RemoteMaterialPackage, build_remote_material_package, _detect_game_root
 import bpy
 from io import BytesIO
 import json
 import os
+import re
 import statistics
 import struct
 from pathlib import Path
@@ -19,6 +20,95 @@ NEOX_TO_BLENDER_BONE_AXES = Matrix((
     (0.0, 0.0, 1.0, 0.0),
     (0.0, 0.0, 0.0, 1.0),
 ))
+
+SKIN_NAME_PATTERN = r"separate_dir[\\/](\w+_[cde]_\w+)[\\/].*?\.gim"
+SKIN_PATH_PATTERN_SURVIVOR = (
+    r"chr[\\/]player[\\/](?:dm65_survivor_girl|dm65_survivor_m|h55_survivor_puppet|dm65_survivor_w)"
+    r"[\\/](?:(?:h55|dm65)_survivor_(?:(?:m|w)_)?\w+)[\\/]separate_dir[\\/]SKINNAME[\\/]SKINNAME.gim"
+)
+SKIN_PATH_PATTERN_HUNTER = r"chr[\\/]boss[\\/].*?[\\/]separate_dir[\\/]SKINNAME[\\/]SKINNAME.gim"
+SKIN_ITEM_NAME_PATTERN = r"chr[\\/]prop[\\/](?:h55_pendant_\w+)[\\/]separate_dir[\\/]SKINNAME[\\/]SKINNAME.gim"
+GENERIC_SKIN_PATH_BRUTE_FORCE = r"chr[\\/]TYPEHINT[\\/](?:.*?[\\/])+separate_dir[\\/](?:\w+[\\/])+(?:\w+_[cde]_[^_]+)\.gim"
+GRAB_SKIN_PATTERNS = {
+    "CHARACTER": r"chr[\\/](?:player|boss)[\\/](?:\w+[\\/])+\w+\.gim",
+    "SURVIVOR": r"chr[\\/]player[\\/](?:\w+[\\/])+\w+\.gim",
+    "HUNTER": r"chr[\\/]boss[\\/](?:\w+[\\/])+\w+\.gim",
+    "ITEM": r"chr[\\/]prop[\\/](?:\w+[\\/])+\w+\.gim",
+    "ACCESSORY": r"chr[\\/]guajian[\\/](?:\w+[\\/])+\w+\.gim",
+    "ALL": r"chr[\\/](?:\w+[\\/])+\w+\.gim",
+}
+
+
+def _game_log_path() -> Path:
+    return _detect_game_root() / "log.txt"
+
+
+def _fix_grabbed_skin_path(potential_path: str | None) -> str | None:
+    if potential_path is None:
+        return None
+
+    if "separate_dir" not in potential_path:
+        return potential_path
+
+    match = re.search(SKIN_NAME_PATTERN, potential_path)
+    if match is None:
+        return potential_path
+
+    skin_name = match.group(1)
+    type_hint = None
+    if "player" in potential_path:
+        type_hint = "player"
+        resolved = grab_current_skin_from_running_game(
+            "SURVIVOR",
+            re.compile(SKIN_PATH_PATTERN_SURVIVOR.replace("SKINNAME", skin_name)),
+        )
+    elif "boss" in potential_path:
+        type_hint = "boss"
+        resolved = grab_current_skin_from_running_game(
+            "HUNTER",
+            re.compile(SKIN_PATH_PATTERN_HUNTER.replace("SKINNAME", skin_name)),
+        )
+    elif "prop" in potential_path:
+        type_hint = "prop"
+        resolved = grab_current_skin_from_running_game(
+            "ITEM",
+            re.compile(SKIN_ITEM_NAME_PATTERN.replace("SKINNAME", skin_name)),
+        )
+    else:
+        return potential_path
+
+    if resolved is None and type_hint is not None:
+        return grab_current_skin_from_running_game(
+            "ALL",
+            re.compile(GENERIC_SKIN_PATH_BRUTE_FORCE.replace("TYPEHINT", type_hint)),
+        )
+    return resolved
+
+
+def grab_current_skin_from_running_game(search_mode: str = "CHARACTER", pattern: re.Pattern | None = None) -> str | None:
+    search_mode = search_mode.upper()
+    if search_mode not in GRAB_SKIN_PATTERNS:
+        raise ValueError(f"Unsupported skin grab search mode: {search_mode}")
+
+    log_path = _game_log_path()
+    if not log_path.is_file():
+        raise FileNotFoundError(f"Identity V log file was not found: {log_path}")
+
+    raw_pattern = GRAB_SKIN_PATTERNS[search_mode] if pattern is None else pattern
+    matches = re.findall(raw_pattern, log_path.read_text(encoding="utf-8", errors="ignore"))
+    if not matches:
+        return None
+
+    last_match = matches[-1]
+    if isinstance(last_match, tuple):
+        last_match = next((part for part in last_match if part), "")
+    if not last_match:
+        return None
+
+    if pattern is None and "guajian" not in last_match:
+        return _fix_grabbed_skin_path(last_match)
+    return str(last_match).replace("\\", "/")
+
 
 class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
     bl_idname = "idvmi_neox.neox_importer"
@@ -90,6 +180,8 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
 
         obj_name = os.path.basename(mesh_path).rsplit(".", 1)[0]
         if import_per_material(model, obj_name, self):
+            context.scene.neox_mesh_selector = ""
+            self.filepath = ""
             self.report({'INFO'}, f"Import OK -> {mesh_path}")
             return {'FINISHED'}
         else:
@@ -131,9 +223,31 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
                 self.report({'WARNING'}, warning)
             if len(package.warnings) > 8:
                 self.report({'WARNING'}, f"{len(package.warnings) - 8} more remote import warning(s)")
+            context.scene.neox_remote_gim_path = ""
             self.report({'INFO'}, f"Remote import OK -> {package.mesh_asset_path}")
             return {'FINISHED'}
         return {'CANCELLED'}
+
+
+class IDVMI_OT_Grab_Current_Skin_From_Game(bpy.types.Operator):
+    bl_idname = "idvmi_neox.grab_current_skin_from_game"
+    bl_label = "Grab Skin From Running Game"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        try:
+            gim_asset_path = grab_current_skin_from_running_game()
+        except Exception as exc:
+            self.report({'ERROR'}, f"Grab skin failed: {exc}")
+            return {'CANCELLED'}
+
+        if not gim_asset_path:
+            self.report({'WARNING'}, "No skin path found in the game log")
+            return {'CANCELLED'}
+
+        context.scene.neox_remote_gim_path = gim_asset_path
+        self.report({'INFO'}, f"Grabbed skin path: {gim_asset_path}")
+        return {'FINISHED'}
 
 
 def menu_func_import(self, context):
