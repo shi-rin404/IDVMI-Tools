@@ -337,7 +337,7 @@ def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
 
 # Dispatch map to replace if/elif chain
 neox_dispatch = {    
-    'OPT_Import_Neox_Mesh': _draw_import_neox_mesh,    
+    'OPT_Import_Neox_Mesh': _draw_import_neox_mesh,
     'OPT_Import_Neox_Animation': _draw_import_neox_animation,
     'OPT_Export_Neox_Animation': _draw_export_neox_animation,
     'OPT_NeoX_Mod_Exporter': _draw_export_neox_mod,

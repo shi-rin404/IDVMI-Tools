@@ -386,15 +386,13 @@ def register_props():
         name="Action Selector",
         description="Select the action you want to do",
         items=[
-            ('OPT_Import_Neox_Mesh', "Import NeoX Mesh", "Imports .mesh file"),            
-            ('OPT_Import_Neox_Animation', "Import Animation", "Imports .cpdanimation file"),
-            ('OPT_Export_Neox_Animation', "Export Animation", "Exports .cpdanimation file"),
+            ('OPT_NeoX_Mesh', "Import/Export Mesh", "Import or export NeoX mesh files"),
+            ('OPT_NeoX_Animation', "Import/Export Animation", "Import or export NeoX animation files"),
             ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),
             ('OPT_Build_Dual_Form_Skin', "Build Dual Form Skin", "Build a dual-form skin from exported NeoX gim files"),
-            ('OPT_Export_Neox_Mesh', "Export NeoX Mesh", "Exports .mesh file"),
             ('OPT_Socket_Operations', "Socket Operations", "Socket editor GUI"),
         ],
-        default='OPT_Import_Neox_Mesh'
+        default='OPT_NeoX_Mesh'
     )
 
     bpy.types.Scene.migoto_action_selector = bpy.props.EnumProperty(
