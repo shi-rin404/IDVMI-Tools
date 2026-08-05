@@ -1,8 +1,5 @@
 import importlib
 
-from ..extract_frame_dump import extract_frame_dump
-from ..set_textures import set_textures
-from ..export_mod.export_ops import Export3DMigoto
 from ..neox_tools.import_ops import (
     IDVMI_FH_Neox_Mesh,
     IDVMI_OT_Grab_Current_Skin_From_Game,
@@ -21,10 +18,16 @@ from ..neox_tools import dual_form_ops
 # Use importlib to load the subpackage by string name.
 _top_pkg = __name__.rsplit('.', 2)[0]  # e.g. 'IDVMI-Tools'
 _3dm_import_ops = importlib.import_module('.3dm.import_ops', package=_top_pkg)
+_3dm_extract_frame_dump = importlib.import_module('.3dm.extract_frame_dump.extract_frame_dump', package=_top_pkg)
+_3dm_set_textures = importlib.import_module('.3dm.set_textures.set_textures', package=_top_pkg)
+_3dm_export_ops = importlib.import_module('.3dm.export_mod.export_ops', package=_top_pkg)
 IDVMI_OT_Import_3DM = _3dm_import_ops.IDVMI_OT_Import_3DM
 IDVMI_OT_Select_VB_Manual = _3dm_import_ops.IDVMI_OT_Select_VB_Manual
 IDVMI_OT_Select_FMT_Manual = _3dm_import_ops.IDVMI_OT_Select_FMT_Manual
 IDVMI_OT_Import_CB_Pose_Armature = _3dm_import_ops.IDVMI_OT_Import_CB_Pose_Armature
+IDVMI_OT_extract_frame_dump = _3dm_extract_frame_dump.IDVMI_OT_extract_frame_dump
+IDVMI_OT_set_textures = _3dm_set_textures.IDVMI_OT_set_textures
+Export3DMigoto = _3dm_export_ops.Export3DMigoto
 
 classes = [
            dual_form_ops.IDVMI_PG_Dual_Form_Trigger,
@@ -43,8 +46,8 @@ classes = [
            auto_update.IDVMI_Update_tools_Migoto,
            auto_update.IDVMI_OT_Check_Update,
            auto_update.IDVMI_OT_Install_Update,
-           extract_frame_dump.IDVMI_OT_extract_frame_dump,
-           set_textures.IDVMI_OT_set_textures,
+           IDVMI_OT_extract_frame_dump,
+           IDVMI_OT_set_textures,
            Export3DMigoto,
            IDVMI_OT_Select_Game_Executable,
            IDVMI_OT_Import_Neox_Mesh,

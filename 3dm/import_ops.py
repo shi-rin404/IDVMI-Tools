@@ -8,16 +8,16 @@ import bpy
 
 from .constant_buffer_armature import import_constant_buffer_pose_armature
 from .data_importer import BlenderDataImporter
-from ..export_mod.datastructures import (
+from .export_mod.datastructures import (
     IndividualVertexBuffer,
     InputLayout,
     VertexBufferGroup,
     IndexBuffer,
 )
-from ..export_mod.data.byte_buffer import (
+from .export_mod.data.byte_buffer import (
     AbstractSemantic, Semantic, BufferSemantic, BufferLayout, NumpyBuffer,
 )
-from ..export_mod.data.dxgi_format import DXGIFormat, DXGIType
+from .export_mod.data.dxgi_format import DXGIFormat, DXGIType
 
 
 # ---------------------------------------------------------------------------

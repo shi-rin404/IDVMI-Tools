@@ -6,13 +6,16 @@ ENCODE_GIM_FILE = False
 #####################################
 
 from copy import deepcopy
+import importlib
 import re, shutil, os, base64
 import xml.etree.ElementTree as ET
 import bpy
-from ...export_mod import shader_textures
-from ...export_mod import ini_maker
 from ..export_ops import get_armature
 from .xml_converter import io_handler, convert_handler
+
+_top_pkg = __package__.split(".neox_tools.", 1)[0]
+shader_textures = importlib.import_module(".3dm.export_mod.shader_textures", package=_top_pkg)
+ini_maker = importlib.import_module(".3dm.export_mod.ini_maker", package=_top_pkg)
 
 _MULTI_MATCH_RE = re.compile(r"(?:[a-z]*?_[cde]_[a-z]*?)_(?:[a-z0-9]+_(mask|nor))", re.IGNORECASE)
 

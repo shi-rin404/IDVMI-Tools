@@ -3,8 +3,8 @@ import bpy
 
 from typing import List, Dict, Optional
 
-from ..export_mod.data.byte_buffer import AbstractSemantic, Semantic, BufferSemantic, NumpyBuffer
-from ..export_mod.data.dxgi_format import DXGIType
+from .export_mod.data.byte_buffer import AbstractSemantic, Semantic, BufferSemantic, NumpyBuffer
+from .export_mod.data.dxgi_format import DXGIType
 
 
 class BlenderDataImporter:

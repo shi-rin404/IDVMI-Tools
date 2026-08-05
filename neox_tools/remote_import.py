@@ -123,7 +123,7 @@ def _make_asset_index():
 
 
 def _vendor_root() -> Path:
-    return Path(__file__).resolve().parents[1] / "_vendor"
+    return Path(__file__).resolve().parents[1] / "builtin" / "_vendor"
 
 
 def _add_vendor_path() -> None:
@@ -209,7 +209,7 @@ def _install_cryptography_into_vendor() -> None:
         details = (pip_install.stderr or pip_install.stdout).strip()
         ensurepip_details = (ensurepip.stderr or ensurepip.stdout).strip()
         raise RuntimeError(
-            "Failed to install cryptography into addon _vendor. "
+            "Failed to install cryptography into addon builtin/_vendor. "
             f"ensurepip={ensurepip.returncode}; pip={pip_install.returncode}; "
             f"details={details or ensurepip_details}"
         )
