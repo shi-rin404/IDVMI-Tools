@@ -1,0 +1,8 @@
+[
+    {
+        "id": "v9.1.6.cleanup_duplicate_moved_folders",
+        "version": "v9.1.6",
+        "module": "v9_1_6_cleanup_duplicate_moved_folders",
+        "description": "Clean duplicate folders left by addon layout moves."
+    }
+]

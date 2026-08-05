@@ -36,6 +36,7 @@ EXCLUDED_NAMES = {
     "export_per_material_log.txt",
     "import_per_material_log.txt",
 }
+HOTFIX_FIXES_PARTS = ("addon", "version_hotfixes", "fixes")
 
 
 def repo_root() -> Path:
@@ -93,7 +94,16 @@ def format_archive_version(version: tuple[int, ...]) -> str:
     return "_".join(str(part) for part in version)
 
 
-def should_package(root: Path, path: Path, *, include_scripts: bool) -> bool:
+def is_version_hotfix_file(relative: Path) -> bool:
+    return (
+        len(relative.parts) >= 4
+        and relative.parts[:3] == HOTFIX_FIXES_PARTS
+        and relative.suffix.lower() == ".py"
+        and relative.name != "__init__.py"
+    )
+
+
+def should_package(root: Path, path: Path, *, include_scripts: bool, version: tuple[int, ...]) -> bool:
     if not path.is_file():
         return False
 
@@ -107,6 +117,9 @@ def should_package(root: Path, path: Path, *, include_scripts: bool) -> bool:
         return False
     if path.name in EXCLUDED_NAMES:
         return False
+    if is_version_hotfix_file(relative):
+        hotfix_prefix = f"v{format_archive_version(version)}_"
+        return relative.stem.startswith(hotfix_prefix)
     return True
 
 
@@ -173,7 +186,7 @@ def main() -> int:
     files = [
         path
         for path in tracked_files(root)
-        if should_package(root, path, include_scripts=args.include_scripts)
+        if should_package(root, path, include_scripts=args.include_scripts, version=version)
     ]
     if not files:
         raise SystemExit("No files selected for packaging.")

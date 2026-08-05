@@ -10,6 +10,8 @@ from pathlib import Path
 
 import bpy
 
+from . import version_hotfixes
+
 GITHUB_REPO = "shi-rin404/IDVMI-Tools"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 USER_AGENT = "IDVMI-Tools-Updater"
@@ -22,7 +24,9 @@ EXCLUDED_UPDATE_PARTS = {
     ".codex",
     ".agents",
     "__pycache__",
+    "dist",
     "remote_import_cache",
+    "user",
 }
 EXCLUDED_UPDATE_SUFFIXES = {
     ".pyc",
@@ -32,6 +36,10 @@ EXCLUDED_UPDATE_NAMES = {
     "direct_url.json",
     "export_per_material_log.txt",
     "import_per_material_log.txt",
+}
+PRESERVED_UPDATE_PATHS = {
+    Path("user"),
+    Path("neox_tools") / "remote_import_cache",
 }
 
 
@@ -164,6 +172,86 @@ def _should_copy(path: Path) -> bool:
     return True
 
 
+def _casefold_parts(path: Path) -> tuple[str, ...]:
+    return tuple(part.casefold() for part in path.parts)
+
+
+def _is_same_or_child(path: Path, parent: Path) -> bool:
+    path_parts = _casefold_parts(path)
+    parent_parts = _casefold_parts(parent)
+    return len(path_parts) >= len(parent_parts) and path_parts[:len(parent_parts)] == parent_parts
+
+
+def _is_preserved_update_path(path: Path) -> bool:
+    return any(_is_same_or_child(path, preserved) for preserved in PRESERVED_UPDATE_PATHS)
+
+
+def _contains_preserved_update_path(path: Path) -> bool:
+    return any(_is_same_or_child(preserved, path) for preserved in PRESERVED_UPDATE_PATHS)
+
+
+def _ensure_update_target_is_safe(target_path: Path, target_root: Path) -> None:
+    resolved_root = target_root.resolve()
+    if target_path.is_symlink():
+        resolved_parent = target_path.parent.resolve()
+        resolved_parent.relative_to(resolved_root)
+        return
+
+    resolved_target = target_path.resolve()
+    resolved_target.relative_to(resolved_root)
+
+
+def _remove_update_path(target_path: Path, target_root: Path) -> int:
+    if not target_path.exists() and not target_path.is_symlink():
+        return 0
+
+    relative = target_path.relative_to(target_root)
+    if _is_preserved_update_path(relative):
+        return 0
+
+    _ensure_update_target_is_safe(target_path, target_root)
+    if target_path.is_symlink() or target_path.is_file():
+        target_path.unlink()
+        return 1
+
+    if not target_path.is_dir():
+        target_path.unlink()
+        return 1
+
+    if not _contains_preserved_update_path(relative):
+        shutil.rmtree(target_path)
+        return 1
+
+    removed = 0
+    for child_path in list(target_path.iterdir()):
+        removed += _remove_update_path(child_path, target_root)
+
+    try:
+        next(target_path.iterdir())
+    except StopIteration:
+        target_path.rmdir()
+        removed += 1
+
+    return removed
+
+
+def _cleanup_roots_for_update(source_root: Path) -> list[Path]:
+    cleanup_roots = {
+        path.relative_to(source_root)
+        for path in source_root.iterdir()
+        if _should_copy(path.relative_to(source_root))
+    }
+    cleanup_roots.difference_update(PRESERVED_UPDATE_PATHS)
+    return sorted(cleanup_roots, key=lambda item: (len(item.parts), str(item).casefold()), reverse=True)
+
+
+def _clean_update_tree(source_root: Path, target_root: Path) -> int:
+    removed = 0
+    for relative in _cleanup_roots_for_update(source_root):
+        removed += _remove_update_path(target_root / relative, target_root)
+    return removed
+
+
 def _copy_update_tree(source_root: Path, target_root: Path) -> int:
     copied = 0
     for source_path in source_root.rglob("*"):
@@ -217,15 +305,27 @@ def install_latest_release(scene) -> tuple[str, int]:
         _safe_extract_zip(archive_path, extract_root)
 
         source_root = _zip_source_root(extract_root)
+        removed = _clean_update_tree(source_root, _addon_root())
         copied = _copy_update_tree(source_root, _addon_root())
+        bundled_hotfixes = version_hotfixes.run_bundled_hotfixes(
+            source_root,
+            current_version,
+            latest_version,
+        )
+        remote_hotfixes = version_hotfixes.run_missing_remote_hotfixes(current_version, latest_version)
+        hotfixes = bundled_hotfixes + remote_hotfixes
 
     _update_scene_state(
         scene,
         release,
         False,
-        f"Installed {_format_version(latest_version)}. Restart Blender to load it.",
+        (
+            f"Installed {_format_version(latest_version)}. "
+            f"Copied {copied} files, removed {removed} old paths, applied {hotfixes} hotfixes. "
+            "Restart Blender to load it."
+        ),
     )
-    return (_format_version(latest_version), copied)
+    return (_format_version(latest_version), copied + removed + hotfixes)
 
 
 class IDVMI_OT_Check_Update(bpy.types.Operator):
