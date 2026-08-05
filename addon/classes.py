@@ -8,6 +8,7 @@ from ..neox_tools.import_ops import (
     IDVMI_OT_Grab_Current_Skin_From_Game,
     IDVMI_OT_Import_Neox_Mesh,
 )
+from ..neox_tools.utils.game_root import IDVMI_OT_Select_Game_Executable
 from ..neox_tools.animation_import_ops import IDVMI_OT_Import_Neox_Animation
 from ..neox_tools.animation_export_ops import IDVMI_OT_Export_Neox_Animation
 from ..neox_tools.export_ops import IDVMI_OT_Export_Neox_Mesh
@@ -45,6 +46,7 @@ classes = [
            extract_frame_dump.IDVMI_OT_extract_frame_dump,
            set_textures.IDVMI_OT_set_textures,
            Export3DMigoto,
+           IDVMI_OT_Select_Game_Executable,
            IDVMI_OT_Import_Neox_Mesh,
            IDVMI_OT_Grab_Current_Skin_From_Game,
            IDVMI_OT_Import_Neox_Animation,

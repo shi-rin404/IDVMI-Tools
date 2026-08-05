@@ -1,5 +1,5 @@
 import bpy
-from ..neox_tools.utils.game_dir_detector import check_game_directory
+from ..neox_tools.utils.game_root import get_documents_mod_directory
 from ..neox_tools import dual_form_ops
 
 CPD_ANIMATION_LOOP_PROPERTY = "NeoX:CPDAnimation:loop"
@@ -319,7 +319,7 @@ def register_props():
         name="NeoX Animation Export Selector",
         description="Select a .cpdanimation export path",
         subtype='FILE_PATH',
-        default=check_game_directory()
+        default=get_documents_mod_directory()
     )
 
     bpy.types.Scene.neox_animation_skeleton_preset = bpy.props.EnumProperty(
@@ -477,7 +477,7 @@ def register_props():
         name="NeoX Export Folder Selector",
         description="Select a NeoX mod export folder",
         subtype='DIR_PATH',
-        default=check_game_directory()
+        default=get_documents_mod_directory()
     )
 
     bpy.types.Scene.clean_ini = bpy.props.BoolProperty(

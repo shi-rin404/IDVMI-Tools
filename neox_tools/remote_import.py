@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import importlib
-import os
 import posixpath
 import re
 import subprocess
@@ -11,7 +10,7 @@ import tempfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
-from .utils.game_dir_detector import check_game_directory
+from .utils.game_root import get_game_root
 from .utils.gim_crypt import decode_gim_file
 
 
@@ -238,25 +237,7 @@ def _reload_asset_lookup_modules() -> None:
 
 
 def _detect_game_root() -> Path:
-    configured = os.environ.get("IDVMI_GAME_ROOT", "").strip()
-    if configured:
-        candidate = Path(configured)
-        if (candidate / "res").is_dir() and (candidate / "Documents" / "res").is_dir():
-            return candidate
-        raise FileNotFoundError(
-            f"IDVMI_GAME_ROOT does not point to an Identity V game root: {configured}"
-        )
-
-    detected = check_game_directory()
-    candidates: list[Path] = []
-    if detected:
-        detected_path = Path(detected)
-        candidates.extend([detected_path, *detected_path.parents])
-
-    for candidate in candidates:
-        if (candidate / "res").is_dir() and (candidate / "Documents" / "res").is_dir():
-            return candidate
-    raise FileNotFoundError("Identity V game root could not be detected")
+    return get_game_root(prompt_on_missing=True)
 
 
 def _normalize_asset_path(asset_path: str) -> str:

@@ -21,6 +21,7 @@ EXCLUDED_PARTS = {
     "__pycache__",
     "remote_import_cache",
     "dist",
+    "user",
 }
 EXCLUDED_TOP_LEVEL = {
     ".gitignore",

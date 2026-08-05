@@ -1,6 +1,7 @@
 from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
 from .coordinate_axes import GAME_TO_BLENDER, NEOX_TO_BLENDER_BONE_AXES
-from .remote_import import RemoteMaterialPackage, build_remote_material_package, _detect_game_root
+from .remote_import import RemoteMaterialPackage, build_remote_material_package
+from .utils.game_root import get_game_root
 import bpy
 from io import BytesIO
 import json
@@ -34,7 +35,7 @@ GRAB_SKIN_PATTERNS = {
 
 
 def _game_log_path() -> Path:
-    return _detect_game_root() / "log.txt"
+    return get_game_root(prompt_on_missing=True) / "log.txt"
 
 
 def _fix_grabbed_skin_path(potential_path: str | None) -> str | None:

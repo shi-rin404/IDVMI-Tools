@@ -5,6 +5,7 @@ __pycache__/
 .codex/
 .agents/
 dist/
+user/
 **/*.dist-info/direct_url.json
 neox_tools/remote_import_cache/
 neox_tools/import_per_material_log.txt
