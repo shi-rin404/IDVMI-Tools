@@ -203,15 +203,54 @@ def _bind_extra_part_bounding_bone(
     if not bounding_bone_name:
         raise ValueError("BoundingBoneName is missing")
 
-    pbone = extra_armature_obj.pose.bones.get(bounding_bone_name)
-    if pbone is None:
+    bounding_pbone = extra_armature_obj.pose.bones.get(bounding_bone_name)
+    if bounding_pbone is None:
         raise ValueError(f"BoundingBoneName bone was not found: {bounding_bone_name}")
 
-    pbone.rotation_mode = "QUATERNION"
+    root_pbone = _root_pose_bone_for(bounding_pbone)
     target_world = _socket_target_world_matrix(main_armature_obj, socket)
     target_pose = extra_armature_obj.matrix_world.inverted_safe() @ target_world
-    pbone.matrix = target_pose
+
+    # Move the extra part by its root pose so the bounding bone's rest-space
+    # offset is preserved instead of overwriting the bounding bone transform.
+    bounding_rest = bounding_pbone.bone.matrix_local.copy()
+    root_rest = root_pbone.bone.matrix_local.copy()
+    root_target_pose = target_pose @ bounding_rest.inverted_safe() @ root_rest
+    _set_pose_bone_basis_from_pose_matrix(root_pbone, root_target_pose)
     bpy.context.view_layer.update()
+
+
+def _root_pose_bone_for(pbone):
+    root = pbone
+    while root.parent is not None:
+        root = root.parent
+    return root
+
+
+def _set_pose_bone_basis_from_pose_matrix(pbone, target_pose: Matrix) -> None:
+    """Set a pose bone by writing its explicit local pose delta.
+
+    Assigning PoseBone.matrix asks Blender to solve the local basis internally.
+    Some imported NeoX bones have rest/parent transforms where that implicit
+    solve produces unstable manual rotate/move behavior, so calculate the basis
+    directly against the parent pose matrix and local rest matrix.
+    """
+
+    rest_matrix = pbone.bone.matrix_local.copy()
+    if pbone.parent is None:
+        matrix_basis = rest_matrix.inverted_safe() @ target_pose
+    else:
+        parent_pose = pbone.parent.matrix.copy()
+        parent_rest = pbone.parent.bone.matrix_local.copy()
+        local_rest = parent_rest.inverted_safe() @ rest_matrix
+        matrix_basis = local_rest.inverted_safe() @ parent_pose.inverted_safe() @ target_pose
+
+    location, rotation, scale = matrix_basis.decompose()
+    rotation.normalize()
+    pbone.location = location
+    pbone.rotation_mode = "QUATERNION"
+    pbone.rotation_quaternion = rotation
+    pbone.scale = scale
 
 
 def _bounding_bone_name(extra_part_path: str) -> str:
