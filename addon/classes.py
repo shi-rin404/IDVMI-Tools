@@ -9,6 +9,7 @@ from ..neox_tools.utils.game_root import IDVMI_OT_Select_Game_Executable
 from ..neox_tools.animation_import_ops import IDVMI_OT_Import_Neox_Animation
 from ..neox_tools.animation_export_ops import IDVMI_OT_Export_Neox_Animation
 from ..neox_tools.export_ops import IDVMI_OT_Export_Neox_Mesh
+from ..neox_tools.fx_import.import_ops import IDVMI_OT_Import_Neox_FX
 from ..addon import auto_update, ui
 from ..neox_tools.mod_exporter.mod_export_ops import IDVMI_OT_Export_Neox_Mod
 from ..neox_tools.socket_operations import visualize_socket_ops
@@ -35,12 +36,21 @@ classes = [
            dual_form_ops.IDVMI_OT_Dual_Form_Add_Trigger,
            dual_form_ops.IDVMI_OT_Dual_Form_Remove_Trigger,
            dual_form_ops.IDVMI_OT_Dual_Form_Add_Regex_Triggers,
+           dual_form_ops.IDVMI_OT_Dual_Form_Cycle_Preset_Source,
+           dual_form_ops.IDVMI_OT_Dual_Form_Reload_Presets,
+           dual_form_ops.IDVMI_OT_Dual_Form_Open_Preset_Folder,
+           dual_form_ops.IDVMI_OT_Dual_Form_Import_Preset,
+           dual_form_ops.IDVMI_OT_Dual_Form_Export_Preset,
            dual_form_ops.IDVMI_OT_Build_Dual_Form_Skin,
            visualize_socket_ops.IDVMI_OT_Create_Socket_Visuals,
            visualize_socket_ops.IDVMI_OT_Copy_Socket_Visual,
            visualize_socket_ops.IDVMI_OT_Create_Socket,
            visualize_socket_ops.IDVMI_OT_Delete_Socket,
            ui.IDVMI_Neox_tools,
+           ui.IDVMI_Neox_Dual_Form_Trigger_Presets,
+           ui.IDVMI_Neox_Dual_Form_Trigger_Preset_Import,
+           ui.IDVMI_Neox_Dual_Form_Trigger_Preset_Export,
+           ui.IDVMI_Neox_Dual_Form_Build,
            ui.IDVMI_Neox_Mesh_Import,
            ui.IDVMI_Neox_Mesh_Export,
            ui.IDVMI_Neox_Animation_Import,
@@ -56,6 +66,7 @@ classes = [
            IDVMI_OT_Select_Game_Executable,
            IDVMI_OT_Import_Neox_Mesh,
            IDVMI_OT_Grab_Current_Skin_From_Game,
+           IDVMI_OT_Import_Neox_FX,
            IDVMI_OT_Import_Neox_Animation,
            IDVMI_OT_Export_Neox_Animation,
            IDVMI_OT_Export_Neox_Mesh,

@@ -89,6 +89,12 @@ def register_props():
         default=True
     )
 
+    bpy.types.Scene.neox_mod_export_grab_original_materials = bpy.props.BoolProperty(
+        name="Grab Original Materials",
+        description="Use original NeoX material files and copy their main textures when possible",
+        default=True
+    )
+
     bpy.types.Scene.neox_dual_form_main_gim = bpy.props.StringProperty(
         name="Main Gim File",
         description="Main form .gim file exported by Export NeoX Mod",
@@ -131,6 +137,33 @@ def register_props():
     bpy.types.Scene.neox_dual_form_animation_name_cache_source = bpy.props.StringProperty(
         name="Animation Name Cache Source",
         default=""
+    )
+
+    bpy.types.Scene.neox_dual_form_preset_source_filter = bpy.props.EnumProperty(
+        name="Preset Source",
+        description="Filter dual form trigger presets by source folder",
+        items=[
+            ("all", "All", "Show default and user presets"),
+            ("defaults", "Defaults", "Show presets from defaults/presets/dual_form"),
+            ("user", "User", "Show presets from user/presets/dual_form"),
+        ],
+        default="all",
+    )
+
+    bpy.types.Scene.neox_dual_form_preset_selector = bpy.props.EnumProperty(
+        name="Preset",
+        description="Dual form trigger preset JSON file",
+        items=dual_form_ops.dual_form_preset_items,
+    )
+
+    bpy.types.Scene.neox_dual_form_preset_export_type = bpy.props.EnumProperty(
+        name="Preset Type",
+        description="Select which dual form trigger preset type to export",
+        items=[
+            ("trigger_list", "Trigger List", "Export the current trigger list"),
+            ("regex", "Regex", "Export the current regex textbox"),
+        ],
+        default="trigger_list",
     )
 
     bpy.types.Scene.neox_rig_selector = bpy.props.EnumProperty(
@@ -202,7 +235,7 @@ def register_props():
 
     bpy.types.Scene.neox_mesh_selector = bpy.props.StringProperty(
         name="NeoX Mesh Selector",
-        description="Select a .mesh file",
+        description="Select a .gim, .mesh, or .mtg file",
         subtype='FILE_PATH',
         default=""     # .blend'e göre relatif
     )
@@ -211,15 +244,15 @@ def register_props():
         name="Import Source",
         description="Select where the NeoX mesh import should read from",
         items=[
-            ('remote', "Remote file", "Import from a game asset .gim path"),
-            ('local', "Local file", "Import from a local .mesh file"),
+            ('remote', "Remote file", "Import from a game asset .gim, .mesh, or .mtg path"),
+            ('local', "Local file", "Import from a local .gim, .mesh, or .mtg file"),
         ],
         default='remote'
     )
 
     bpy.types.Scene.neox_remote_gim_path = bpy.props.StringProperty(
-        name="Remote Gim Path",
-        description="Game asset path to a .gim prefab file",
+        name="Remote NeoX Path",
+        description="Game asset path to a .gim, .mesh, or .mtg file",
         default=""
     )
 
@@ -289,6 +322,13 @@ def register_props():
     bpy.types.Scene.neox_remote_animation_path = bpy.props.StringProperty(
         name="Remote Animation Path",
         description="Game asset path to a .cpdanimation file",
+        default=""
+    )
+
+    bpy.types.Scene.neox_fx_selector = bpy.props.StringProperty(
+        name="NeoX FX Selector",
+        description="Select a NeoX FX .json, JSON .pse, or binary .bpse file",
+        subtype='FILE_PATH',
         default=""
     )
 
@@ -391,6 +431,7 @@ def register_props():
             ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),
             ('OPT_Build_Dual_Form_Skin', "Build Dual Form Skin", "Build a dual-form skin from exported NeoX gim files"),
             ('OPT_Socket_Operations', "Socket Operations", "Socket editor GUI"),
+            ('OPT_Import_Neox_FX', "Import FX (Under Development)", "Import a JSON-converted NeoX BPSE FX preview"),
         ],
         default='OPT_NeoX_Mesh'
     )

@@ -78,7 +78,7 @@ def _draw_import_neox_mesh(layout, scene, context, folder_box):
     folder_box.prop(scene, "neox_mesh_import_source", text="")
 
     if scene.neox_mesh_import_source == "remote":
-        folder_box.label(text="Remote .gim path")
+        folder_box.label(text="Remote .gim/.mesh/.mtg path")
         folder_box.prop(scene, "neox_remote_gim_path", text="")
         folder_box.prop(scene, "neox_remote_import_extra_parts", text="Import Extra Parts")
         folder_box.prop(scene, "neox_remote_import_sockets", text="Import Sockets")
@@ -95,7 +95,7 @@ def _draw_import_neox_mesh(layout, scene, context, folder_box):
                 socket_filters.prop(scene, "neox_socket_filter_socket_names", text="")
         op = folder_box.operator(
             "idvmi_neox.neox_importer",
-            text="Import Remote .gim",
+            text="Import Remote NeoX",
             icon="IMPORT",
             depress=True,
         )
@@ -109,10 +109,11 @@ def _draw_import_neox_mesh(layout, scene, context, folder_box):
         )
         return
 
-    folder_box.label(text="NeoX Mesh")
+    folder_box.label(text="NeoX .gim/.mesh/.mtg")
+    folder_box.prop(scene, "neox_remote_import_extra_parts", text="Import Extra Parts")
     op = folder_box.operator(
         "idvmi_neox.neox_importer",
-        text="Select .mesh and Import",
+        text="Select NeoX File and Import",
         icon="IMPORT",
     )
     op.filepath = ""
@@ -145,6 +146,16 @@ def _draw_import_neox_animation(layout, scene, context, folder_box):
     op.filepath = ""
     op.use_scene_selector = False
     op.import_source = "local"
+
+def _draw_import_neox_fx(layout, scene, context, folder_box):
+    folder_box.label(text="NeoX FX")
+    folder_box.prop(scene, "neox_fx_selector", text="")
+    op = folder_box.operator(
+        "idvmi_neox.import_fx",
+        text="Select .json/.pse/.bpse and Import",
+        icon="IMPORT",
+    )
+    op.filepath = ""
 
 def _draw_export_neox_animation(layout, scene, context, folder_box):
     folder_box.label(text="Export Mode")
@@ -258,6 +269,7 @@ def _draw_export_neox_mod(layout, scene, context, folder_box):
         text="Export with Custom Skeleton",
     )
 
+    layout.prop(scene, "neox_mod_export_grab_original_materials", text="Grab Original Materials")
     layout.prop(scene, "neox_mod_export_create_mod_json", text="Create mod.json")
     layout.operator("idvmi_neox.neox_mod_exporter", icon="EXPORT")
 
@@ -291,6 +303,26 @@ def _draw_build_dual_form_skin(layout, scene, context, folder_box):
     regex_split.prop(scene, "neox_dual_form_regex_text", text="")
     regex_split.operator("idvmi_neox.dual_form_add_regex_triggers", text="+")
 
+
+def _draw_dual_form_trigger_preset_import(layout, scene, context):
+    layout.label(text="Presets")
+    row = layout.row(align=True)
+    split = row.split(factor=0.82, align=True)
+    split.prop(scene, "neox_dual_form_preset_selector", text="")
+    button_row = split.row(align=True)
+    button_row.operator("idvmi_neox.dual_form_reload_presets", text="", icon="FILE_REFRESH")
+    button_row.operator("idvmi_neox.dual_form_cycle_preset_source", text="", icon="FILE_REFRESH")
+    button_row.operator("idvmi_neox.dual_form_open_preset_folder", text="", icon="FILE_FOLDER")
+    layout.operator("idvmi_neox.dual_form_import_preset", text="Import Preset", icon="IMPORT")
+
+
+def _draw_dual_form_trigger_preset_export(layout, scene, context):
+    layout.label(text="Export...")
+    layout.prop(scene, "neox_dual_form_preset_export_type", text="")
+    layout.operator("idvmi_neox.dual_form_export_preset", text="Export Preset", icon="EXPORT")
+
+
+def _draw_build_dual_form_skin_button(layout, scene, context):
     layout.operator("idvmi_neox.build_dual_form_skin", icon="MODIFIER")
 
 
@@ -343,6 +375,7 @@ neox_dispatch = {
     'OPT_NeoX_Mod_Exporter': _draw_export_neox_mod,
     'OPT_Build_Dual_Form_Skin': _draw_build_dual_form_skin,
     'OPT_Export_Neox_Mesh': _draw_export_neox_mesh,
+    'OPT_Import_Neox_FX': _draw_import_neox_fx,
     'OPT_Socket_Operations': _draw_socket_operations,
 }
 

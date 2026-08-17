@@ -95,6 +95,75 @@ class IDVMI_Neox_Animation_Export(bpy.types.Panel):
         func_map._draw_export_neox_animation(self.layout, context.scene, context, self.layout)
 
 
+class IDVMI_Neox_Dual_Form_Trigger_Presets(bpy.types.Panel):
+    bl_label = "Import/Export Trigger List"
+    bl_idname = "idvmi_neox_dual_form_trigger_presets"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "IDVMI Neox"
+    bl_parent_id = "idvmi_neox"
+    bl_order = 0
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context.scene, "neox_action_selector", "") == "OPT_Build_Dual_Form_Skin"
+
+    def draw(self, context):
+        pass
+
+
+class IDVMI_Neox_Dual_Form_Trigger_Preset_Import(bpy.types.Panel):
+    bl_label = "Import"
+    bl_idname = "idvmi_neox_dual_form_trigger_preset_import"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "IDVMI Neox"
+    bl_parent_id = "idvmi_neox_dual_form_trigger_presets"
+    bl_order = 0
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context.scene, "neox_action_selector", "") == "OPT_Build_Dual_Form_Skin"
+
+    def draw(self, context):
+        func_map._draw_dual_form_trigger_preset_import(self.layout, context.scene, context)
+
+
+class IDVMI_Neox_Dual_Form_Trigger_Preset_Export(bpy.types.Panel):
+    bl_label = "Export"
+    bl_idname = "idvmi_neox_dual_form_trigger_preset_export"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "IDVMI Neox"
+    bl_parent_id = "idvmi_neox_dual_form_trigger_presets"
+    bl_order = 1
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context.scene, "neox_action_selector", "") == "OPT_Build_Dual_Form_Skin"
+
+    def draw(self, context):
+        func_map._draw_dual_form_trigger_preset_export(self.layout, context.scene, context)
+
+
+class IDVMI_Neox_Dual_Form_Build(bpy.types.Panel):
+    bl_label = "Build"
+    bl_idname = "idvmi_neox_dual_form_build"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "IDVMI Neox"
+    bl_parent_id = "idvmi_neox"
+    bl_order = 1
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context.scene, "neox_action_selector", "") == "OPT_Build_Dual_Form_Skin"
+
+    def draw(self, context):
+        func_map._draw_build_dual_form_skin_button(self.layout, context.scene, context)
+
+
 class IDVMI_3DM_tools(bpy.types.Panel):
     bl_label = "IDVMI Migoto"
     bl_idname = "idvmi_migoto"

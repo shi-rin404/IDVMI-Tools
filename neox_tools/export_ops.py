@@ -671,6 +671,9 @@ def parse_blender_meshes(armature, flip_uv_y, operator, log) -> dict:
             mesh_data['mesh'].append({'position': positions, 'normal': normals, 'tangent': vert_tangent, 'face': faces, 'uv': uv_vertex, 'vertex_joint': joints, 'vertex_joint_weight': weights})
             log.write(f"  Finished processing mesh: {child.name}\n"); log.flush()
 
+    if bpy.ops.object.mode_set.poll():
+        bpy.ops.object.mode_set(mode='OBJECT')
+
     try:
         log.write("Rebuilding bone usage mask from final vertex weights...\n"); log.flush()
         weighted_bone_names = collect_weighted_bone_names_from_mesh_data(mesh_data)
@@ -678,7 +681,21 @@ def parse_blender_meshes(armature, flip_uv_y, operator, log) -> dict:
             list(mesh_data['bone_name']),
             weighted_bone_names,
         )
+    except Exception as exc:
+        import traceback
+        log.write(f"WARNING: Failed to rebuild bone usage mask: {exc}\n"); log.flush()
+        traceback.print_exc(file=log)
+        weighted_bone_names = set(mesh_data['bone_name'])
+        mesh_data['bone_weight_usage'] = encode_bone_weight_usage_mask(
+            list(mesh_data['bone_name']),
+            weighted_bone_names,
+        )
+        operator.report(
+            {'WARNING'},
+            f"Bone usage metadata fallback used: {exc}",
+        )
 
+    try:
         log.write("Rebuilding collision records from current mesh vertices...\n"); log.flush()
         mesh_data['bounding_info'] = build_collision_records(
             armature,
@@ -689,9 +706,22 @@ def parse_blender_meshes(armature, flip_uv_y, operator, log) -> dict:
             log,
         )
     except Exception as exc:
-        log.write(f"ERROR: Failed to rebuild skeletal export metadata: {exc}\n"); log.flush()
-        operator.report({'ERROR'}, f"Failed to rebuild skeletal metadata: {exc}")
-        return False
+        import traceback
+        log.write(f"WARNING: Failed to rebuild collision metadata: {exc}\n"); log.flush()
+        traceback.print_exc(file=log)
+        mesh_data['bounding_info'] = [
+            zero_collision_record()
+            for _ in ordered_bones
+        ]
+        log.write(
+            "WARNING: Using zero collision records instead of omitting "
+            "the collision section. Some NeoX runtimes keep reading this "
+            "section even when the flag is zero.\n"
+        ); log.flush()
+        operator.report(
+            {'WARNING'},
+            f"Collision metadata fallback used: {exc}",
+        )
 
     mesh_data['mesh_objects'] = mesh_objects
 

@@ -47,6 +47,11 @@ def _safe_asset_stem(value: str) -> str:
     return stem or "mod"
 
 
+def _log(log, message: str) -> None:
+    log.write(f"{message}\n")
+    log.flush()
+
+
 def _validate_armature_matches_imported_bone_order(armature):
     if "NeoX:BoneOrder" not in armature:
         raise ValueError(
@@ -110,22 +115,33 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
         root = os.path.dirname(__file__)
         log_file = os.path.join(root, "export_per_material_log.txt")
         with open(log_file, "w") as log:
-            log.write("--- New export session started ---\n"); log.flush()
+            _log(log, "--- New NeoX mod export session started ---")
         
         with open(log_file, "a") as log:
             export_path = bpy.path.abspath(context.scene.neox_export_selector)
+            _log(log, f"Requested export selector: {export_path}")
 
             if _is_documents_res_mod_path(export_path):
                 export_path = os.path.join(export_path, context.scene.neox_mod_name)
+                _log(log, f"Resolved mod export path: {export_path}")
             
             os.makedirs(export_path, exist_ok=True)
             asset_stem = _safe_asset_stem(context.scene.neox_mod_name)
+            _log(log, f"Mod name: {context.scene.neox_mod_name}")
+            _log(log, f"Asset stem: {asset_stem}")
+            _log(log, f"Log file: {log_file}")
 
             arm_obj = get_armature(context, self)
             if not arm_obj:
+                _log(log, "ERROR: No export armature found.")
                 return {'CANCELLED'}
+            _log(log, f"Armature: {arm_obj.name}")
 
             custom_skeleton = context.scene.neox_mod_export_custom_skeleton
+            _log(log, f"Custom skeleton: {custom_skeleton}")
+            _log(log, f"Flip UV Y: {context.scene.flip_uv_y}")
+            _log(log, f"Create mod.json: {context.scene.neox_mod_export_create_mod_json}")
+            _log(log, f"Grab original materials: {getattr(context.scene, 'neox_mod_export_grab_original_materials', True)}")
 
             try:
                 if custom_skeleton:
@@ -138,15 +154,19 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
                 return {'CANCELLED'}
 
             # Export Mesh
+            _log(log, "--- Export Mesh ---")
             flip_uv_y = context.scene.flip_uv_y        
 
             mesh_data = parse_blender_meshes(arm_obj, flip_uv_y, self, log)
 
             if not mesh_data:
+                _log(log, "ERROR: Mesh parsing returned no data.")
                 return {'CANCELLED'}
 
+            mesh_output_path = bpy.path.abspath(os.path.join(export_path, f"{asset_stem}.mesh"))
+            _log(log, f"Mesh output: {mesh_output_path}")
             if not export_neox_mesh(
-                bpy.path.abspath(os.path.join(export_path, f"{asset_stem}.mesh")),
+                mesh_output_path,
                 mesh_data,
                 arm_obj,
                 self,
@@ -155,12 +175,14 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
                 return {'CANCELLED'}
 
             # Export Textures
-            if not texture_handler(export_path, context, self, asset_stem):
+            if not texture_handler(export_path, context, self, asset_stem, log):
+                _log(log, "ERROR: Texture export failed.")
                 return {'CANCELLED'}
 
             if custom_skeleton:
                 try:
-                    _export_custom_skeleton(export_path, arm_obj)
+                    skeleton_path = _export_custom_skeleton(export_path, arm_obj)
+                    _log(log, f"Custom skeleton output: {skeleton_path}")
                 except Exception as exc:
                     log.write(f"ERROR: Custom skeleton export failed: {exc}\n"); log.flush()
                     self.report({'ERROR'}, f"Custom skeleton export failed: {exc}")
@@ -173,6 +195,7 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
                     arm_obj,
                     asset_stem
                 )
+                _log(log, f"GIM output: {gim_path}")
             except Exception as exc:
                 log.write(f"ERROR: Gim export failed: {exc}\n"); log.flush()
                 self.report({'ERROR'}, f"Gim export failed: {exc}")
@@ -183,6 +206,9 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
                     gim_path,
                     context
                 )
+                _log(log, "mod.json output requested and completed.")
 
             self.report({'INFO'}, f"Export OK → {export_path}")
+            _log(log, "--- Export finished successfully ---")
+            self.report({'INFO'}, f"NeoX mod export log: {log_file}")
             return {'FINISHED'}

@@ -1,6 +1,10 @@
 from .neox_mesh_parser import parse_mesh_1, parse_mesh_2, parse_mesh_3
 from .coordinate_axes import GAME_TO_BLENDER, NEOX_TO_BLENDER_BONE_AXES
-from .remote_import import RemoteMaterialPackage, build_remote_material_package
+from .remote_import import (
+    RemoteMaterialPackage,
+    build_local_material_package,
+    build_remote_material_package,
+)
 from .utils.game_root import get_game_root
 import bpy
 from io import BytesIO
@@ -113,7 +117,7 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
     filename_ext = ".mesh"
     filepath: StringProperty(subtype="FILE_PATH")
     filter_glob: StringProperty(
-        default="*.mesh",
+        default="*.gim;*.mesh;*.mtg",
         options={'HIDDEN'},
         maxlen=255,
     )
@@ -134,7 +138,7 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
         if self.use_scene_selector:
             return self.execute(context)
 
-        self.filter_glob = "*.mesh"
+        self.filter_glob = "*.gim;*.mesh;*.mtg"
         context.window_manager.fileselect_add(self)
         return {'RUNNING_MODAL'}
 
@@ -147,50 +151,78 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
         if self.import_source == "remote":
             return self._execute_remote(context)
 
-        mesh_path = self.filepath or context.scene.neox_mesh_selector
-        mesh_path = bpy.path.abspath(mesh_path)
+        input_path = self.filepath or context.scene.neox_mesh_selector
+        input_path = bpy.path.abspath(input_path)
 
-        if not mesh_path:
-            self.report({'ERROR'}, "Please select a .mesh file")
+        if not input_path:
+            self.report({'ERROR'}, "Please select a .gim, .mesh, or .mtg file")
             return {'CANCELLED'}
 
-        if os.path.splitext(mesh_path)[1].lower() != ".mesh":
-            self.report({'ERROR'}, f"Expected a .mesh file: {mesh_path}")
+        if os.path.splitext(input_path)[1].lower() not in {".gim", ".mesh", ".mtg"}:
+            self.report({'ERROR'}, f"Expected a .gim, .mesh, or .mtg file: {input_path}")
             return {'CANCELLED'}
 
-        if not os.path.isfile(mesh_path):
-            self.report({'ERROR'}, f"File not found: {mesh_path}")
+        if not os.path.isfile(input_path):
+            self.report({'ERROR'}, f"File not found: {input_path}")
             return {'CANCELLED'}
 
-        context.scene.neox_mesh_selector = mesh_path
+        cache_root = Path(__file__).resolve().parent / "remote_import_cache" / "local_import"
+        try:
+            package = build_local_material_package(input_path, cache_root)
+        except Exception as e:
+            log_file = os.path.join(os.path.dirname(__file__), "import_per_material_log.txt")
+            with open(log_file, "a") as log:
+                import traceback
+                log.write("--- Local import failed while building material package ---\n")
+                traceback.print_exc(file=log)
+            self.report({'ERROR'}, f"Local import failed: {e}")
+            return {'CANCELLED'}
 
-        with open(mesh_path, "rb") as mesh_file:
-            model = _parse_neox_mesh(mesh_file, self)
-
+        context.scene.neox_mesh_selector = input_path
+        model = _parse_neox_mesh(BytesIO(package.mesh_data), self)
 
         if model == {}:
             self.report({'ERROR'}, "Model can't be decoded")
             return {'CANCELLED'}
 
 
-        obj_name = os.path.basename(mesh_path).rsplit(".", 1)[0]
-        if import_per_material(model, obj_name, self):
+        obj_name = os.path.basename(package.mesh_asset_path).rsplit(".", 1)[0]
+        if import_per_material(model, obj_name, self, package):
+            if context.scene.neox_remote_import_extra_parts and package.gim_asset_path:
+                from .extra_part_import import import_extra_parts_for_local_gim
+
+                imported_extra_parts = import_extra_parts_for_local_gim(
+                    main_package=package,
+                    cache_root=cache_root,
+                    operator=self,
+                    parse_mesh=_parse_neox_mesh,
+                    import_model=import_per_material,
+                )
+                if imported_extra_parts:
+                    self.report(
+                        {'INFO'},
+                        f"Imported {len(imported_extra_parts)} extra part(s)",
+                    )
+            for warning in package.warnings[:8]:
+                self.report({'WARNING'}, warning)
+            if len(package.warnings) > 8:
+                self.report({'WARNING'}, f"{len(package.warnings) - 8} more local import warning(s)")
             context.scene.neox_mesh_selector = ""
             self.filepath = ""
-            self.report({'INFO'}, f"Import OK -> {mesh_path}")
+            self.report({'INFO'}, f"Import OK -> {package.mesh_asset_path}")
             return {'FINISHED'}
         else:
             return {'CANCELLED'}
 
     def _execute_remote(self, context):
-        gim_asset_path = context.scene.neox_remote_gim_path.strip()
-        if not gim_asset_path:
-            self.report({'ERROR'}, "Please enter a remote .gim asset path")
+        asset_path = context.scene.neox_remote_gim_path.strip()
+        if not asset_path:
+            self.report({'ERROR'}, "Please enter a remote .gim, .mesh, or .mtg asset path")
             return {'CANCELLED'}
 
         cache_root = Path(__file__).resolve().parent / "remote_import_cache"
         try:
-            package = build_remote_material_package(gim_asset_path, cache_root)
+            package = build_remote_material_package(asset_path, cache_root)
         except Exception as e:
             log_file = os.path.join(os.path.dirname(__file__), "import_per_material_log.txt")
             with open(log_file, "a") as log:
@@ -205,7 +237,7 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
             self.report({'ERROR'}, "Model can't be decoded")
             return {'CANCELLED'}
 
-        context.scene.neox_remote_gim_path = gim_asset_path
+        context.scene.neox_remote_gim_path = asset_path
         obj_name = os.path.basename(package.mesh_asset_path).rsplit(".", 1)[0]
         if import_per_material(
             model,
@@ -214,7 +246,7 @@ class IDVMI_OT_Import_Neox_Mesh(bpy.types.Operator, ImportHelper):
             package,
             import_sockets=context.scene.neox_remote_import_sockets,
         ):
-            if context.scene.neox_remote_import_extra_parts:
+            if context.scene.neox_remote_import_extra_parts and package.gim_asset_path:
                 from .extra_part_import import import_extra_parts_for_remote_gim
 
                 imported_extra_parts = import_extra_parts_for_remote_gim(
@@ -673,21 +705,15 @@ def _assign_remote_material_slots(mesh_obj, mesh_index: int, package: RemoteMate
         log.write(f"    No remote material metadata for mesh {mesh_index}.\n"); log.flush()
         return
 
-    materials_by_tag = {}
-    for slot_index, tag in enumerate(("Tex0", "TexNormal", "TexMetal")):
-        material = _ensure_textured_material(
-            f"{tag}_{mesh_obj.name}",
-            material_info.get(tag),
-            operator,
-            tag,
-        )
-        materials_by_tag[tag] = material
-        if len(mesh_obj.data.materials) <= slot_index:
-            mesh_obj.data.materials.append(material)
-        else:
-            mesh_obj.data.materials[slot_index] = material
-
-    _configure_remote_shader_maps(materials_by_tag.get("Tex0"), material_info, operator)
+    material = _ensure_textured_material(
+        mesh_obj.name,
+        material_info.get("Tex0"),
+        operator,
+        "Tex0",
+    )
+    mesh_obj.data.materials.clear()
+    mesh_obj.data.materials.append(material)
+    _configure_remote_shader_maps(material, material_info, operator)
 
 
 def _socket_json(value) -> str:
@@ -1311,6 +1337,12 @@ def import_per_material(
 
             mesh_data = bpy.data.meshes.new(f"{obj_name}_{mesh_index}")
             mesh_obj = bpy.data.objects.new(f"{obj_name}_{mesh_index}", mesh_data)
+            if remote_material_package is not None:
+                gim_path = str(remote_material_package.gim_asset_path or "").strip()
+                if gim_path and not os.path.isabs(gim_path):
+                    mesh_obj["NeoX:GimPath"] = gim_path
+                if mesh_index in remote_material_package.submesh_mtl_indices:
+                    mesh_obj["NeoX:MtlIdx"] = remote_material_package.submesh_mtl_indices[mesh_index]
             bpy.context.collection.objects.link(mesh_obj)
 
             # Position & Normal - FIX: Convert tuples to Vector properly

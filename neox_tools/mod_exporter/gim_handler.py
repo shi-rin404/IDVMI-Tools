@@ -79,6 +79,14 @@ def _delete_marked_sockets(decoded_gim_data: ET.Element, armature) -> int:
     return deleted
 
 
+def _clean_export_only_gim_references(decoded_gim_data: ET.Element) -> None:
+    decoded_gim_data.attrib.pop("Mesh", None)
+
+    mtg_file = decoded_gim_data.find("MtgFile")
+    if mtg_file is not None:
+        mtg_file.attrib["MtgPath"] = ""
+
+
 def gim_handler(export_path:str, rig_info:dict, armature, asset_stem="main"):
     # element_tags, attribute_map = parse_handler.parseCustomBinFormat(rig_info["gim"])
     if parse_handler.typeFile(rig_info["gim"]) == "Binary":
@@ -100,9 +108,7 @@ def gim_handler(export_path:str, rig_info:dict, armature, asset_stem="main"):
     # Rig
     decoded_gim_data.find("SkeletonFile").find("FileName").attrib["Value"] = rig_info["skeleton"]
     decoded_gim_data.find("AnimationConfigFile").find("FileName").attrib["Value"] = rig_info["animconfig"]
-    mtg_file = decoded_gim_data.find("MtgFile")
-    if mtg_file is not None:
-        mtg_file.attrib["MtgPath"] = f"{asset_stem}.mtg"
+    _clean_export_only_gim_references(decoded_gim_data)
     _delete_marked_sockets(decoded_gim_data, armature)
     _append_custom_sockets(decoded_gim_data, armature)
     

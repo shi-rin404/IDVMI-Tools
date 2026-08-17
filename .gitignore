@@ -10,6 +10,7 @@ user/
 neox_tools/remote_import_cache/
 neox_tools/import_per_material_log.txt
 neox_tools/export_per_material_log.txt
+neox_tools/fx_import/fx_import_debug.log
 neox_tools/mod_exporter/export_per_material_log.txt
 release.md
 release.bat
