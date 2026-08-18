@@ -37,6 +37,10 @@ EXCLUDED_NAMES = {
     "import_per_material_log.txt",
 }
 HOTFIX_FIXES_PARTS = ("addon", "version_hotfixes", "fixes")
+REQUIRED_VENDOR_NATIVE_FILES = (
+    Path("builtin/_vendor/_cffi_backend.cp310-win_amd64.pyd"),
+    Path("builtin/_vendor/cryptography/hazmat/bindings/_rust.pyd"),
+)
 
 
 def repo_root() -> Path:
@@ -139,6 +143,21 @@ def write_zip(output_path: Path, root: Path, files: list[Path], prefix: str) -> 
             archive.writestr(info, path.read_bytes(), compress_type=zipfile.ZIP_DEFLATED, compresslevel=9)
 
 
+def validate_release_files(root: Path, files: list[Path]) -> None:
+    selected = {path.relative_to(root).as_posix().lower() for path in files}
+    missing = [
+        str(relative)
+        for relative in REQUIRED_VENDOR_NATIVE_FILES
+        if relative.as_posix().lower() not in selected
+    ]
+    if missing:
+        raise SystemExit(
+            "Refusing to package without required vendor native files. "
+            "These files are needed for AES-packed asset decoding in Blender: "
+            + ", ".join(missing)
+        )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Build a clean Blender-compatible IDVMI Tools release zip."
@@ -190,6 +209,7 @@ def main() -> int:
     ]
     if not files:
         raise SystemExit("No files selected for packaging.")
+    validate_release_files(root, files)
 
     if args.dry_run:
         print(f"Version: v{version_text}")

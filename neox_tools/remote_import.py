@@ -310,15 +310,14 @@ def _install_cryptography_into_vendor() -> None:
     global _CRYPTOGRAPHY_INSTALL_ATTEMPTED
 
     _add_vendor_path()
-    try:
-        import cryptography  # noqa: F401
+    import_error = _cryptography_aes_import_error()
+    if import_error is None:
         return
-    except Exception:
-        pass
 
     if _CRYPTOGRAPHY_INSTALL_ATTEMPTED:
         raise RuntimeError(
-            "cryptography is still unavailable after the previous install attempt"
+            "cryptography AES support is still unavailable after the previous "
+            f"install attempt: {import_error}"
         )
     _CRYPTOGRAPHY_INSTALL_ATTEMPTED = True
 
@@ -350,12 +349,20 @@ def _install_cryptography_into_vendor() -> None:
 
     importlib.invalidate_caches()
     _add_vendor_path()
-    try:
-        import cryptography  # noqa: F401
-    except Exception as exc:
+    import_error = _cryptography_aes_import_error()
+    if import_error is not None:
         raise RuntimeError(
-            f"cryptography installed to {vendor}, but Blender could not import it: {exc}"
-        ) from exc
+            f"cryptography installed to {vendor}, but Blender could not import AES support: {import_error}"
+        )
+
+
+def _cryptography_aes_import_error() -> str | None:
+    try:
+        from cryptography.hazmat.backends import default_backend as _aes_default_backend  # noqa: F401
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes  # noqa: F401
+    except Exception as exc:
+        return f"{type(exc).__name__}: {exc}"
+    return None
 
 
 def _reload_asset_lookup_modules() -> None:
