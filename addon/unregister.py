@@ -21,6 +21,7 @@ def unregister_props():
         lambda: delattr(bpy.types.Scene, "neox_dual_form_preset_source_filter"),
         lambda: delattr(bpy.types.Scene, "neox_dual_form_preset_selector"),
         lambda: delattr(bpy.types.Scene, "neox_dual_form_preset_export_type"),
+        lambda: delattr(bpy.types.Scene, "neox_dual_form_create_unexisting_animations"),
         lambda: delattr(bpy.types.Scene, "neox_mod_name"),
         lambda: delattr(bpy.types.Scene, "skeleton_path"),  
         lambda: delattr(bpy.types.Scene, "animconfig_location"),  

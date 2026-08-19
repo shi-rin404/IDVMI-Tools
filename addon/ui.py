@@ -103,6 +103,7 @@ class IDVMI_Neox_Dual_Form_Trigger_Presets(bpy.types.Panel):
     bl_category = "IDVMI Neox"
     bl_parent_id = "idvmi_neox"
     bl_order = 0
+    bl_options = {"DEFAULT_CLOSED"}
 
     @classmethod
     def poll(cls, context):
@@ -147,6 +148,24 @@ class IDVMI_Neox_Dual_Form_Trigger_Preset_Export(bpy.types.Panel):
         func_map._draw_dual_form_trigger_preset_export(self.layout, context.scene, context)
 
 
+class IDVMI_Neox_Dual_Form_Advanced(bpy.types.Panel):
+    bl_label = "Advanced"
+    bl_idname = "idvmi_neox_dual_form_advanced"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "IDVMI Neox"
+    bl_parent_id = "idvmi_neox"
+    bl_order = 1
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return getattr(context.scene, "neox_action_selector", "") == "OPT_Build_Dual_Form_Skin"
+
+    def draw(self, context):
+        func_map._draw_dual_form_advanced(self.layout, context.scene, context)
+
+
 class IDVMI_Neox_Dual_Form_Build(bpy.types.Panel):
     bl_label = "Build"
     bl_idname = "idvmi_neox_dual_form_build"
@@ -154,7 +173,7 @@ class IDVMI_Neox_Dual_Form_Build(bpy.types.Panel):
     bl_region_type = "UI"
     bl_category = "IDVMI Neox"
     bl_parent_id = "idvmi_neox"
-    bl_order = 1
+    bl_order = 2
 
     @classmethod
     def poll(cls, context):

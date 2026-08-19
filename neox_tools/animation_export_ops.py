@@ -50,6 +50,7 @@ from bpy_extras.io_utils import axis_conversion
 from mathutils import Euler, Matrix, Quaternion, Vector
 
 from .export_ops import build_bone_matrices, build_export_bone_order
+from .utils.game_root import ensure_game_root_or_prompt
 
 
 # -----------------------------------------------------------------------------
@@ -2002,6 +2003,25 @@ class IDVMI_OT_Export_Neox_Animation(bpy.types.Operator):
                 )
                 if not gim_path:
                     raise CPDExportError("Mod gim file is empty.")
+                if not ensure_game_root_or_prompt(
+                    self,
+                    context,
+                    retry_properties={
+                        "export_mode": export_mode,
+                        "gim_path": gim_path,
+                        "animation_name": (
+                            self.animation_name
+                            or context.scene.neox_animation_export_animation_name
+                        ),
+                        "loop": self.loop,
+                        "fps": self.fps,
+                        "reduce_keys": self.reduce_keys,
+                        "position_tolerance": self.position_tolerance,
+                        "scale_tolerance": self.scale_tolerance,
+                        "rotation_tolerance_degrees": self.rotation_tolerance_degrees,
+                    },
+                ):
+                    return {"CANCELLED"}
                 gim_path = Path(bpy.path.abspath(gim_path))
                 armature_obj[PROPERTY_LOOP] = self.loop
                 result, warnings, infos = implement_animation_to_existing_mod(

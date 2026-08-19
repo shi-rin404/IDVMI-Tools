@@ -13,6 +13,7 @@ import bpy
 from bpy.props import BoolProperty, StringProperty
 from bpy_extras.io_utils import ImportHelper, axis_conversion
 from mathutils import Matrix, Quaternion, Vector
+from .utils.game_root import ensure_game_root_or_prompt
 
 
 SOURCE_FORWARD = "Z"
@@ -132,6 +133,15 @@ class IDVMI_OT_Import_Neox_Animation(bpy.types.Operator, ImportHelper):
                 return {"CANCELLED"}
             if not animation_asset_path.lower().endswith(".cpdanimation"):
                 self.report({"ERROR"}, f"Expected a remote .cpdanimation path: {animation_asset_path}")
+                return {"CANCELLED"}
+            if not ensure_game_root_or_prompt(
+                self,
+                context,
+                retry_properties={
+                    "use_scene_selector": True,
+                    "import_source": "remote",
+                },
+            ):
                 return {"CANCELLED"}
 
             try:

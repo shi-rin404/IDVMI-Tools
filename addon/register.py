@@ -166,6 +166,12 @@ def register_props():
         default="trigger_list",
     )
 
+    bpy.types.Scene.neox_dual_form_create_unexisting_animations = bpy.props.BoolProperty(
+        name="Create Unexisting Animations",
+        description="Don't skip if a trigger doesn't find in animconfig. Patch it to work properly. Recommended for non-humanoid models and models using real time physics.",
+        default=False,
+    )
+
     bpy.types.Scene.neox_rig_selector = bpy.props.EnumProperty(
         name="Rig Selector",
         description="Select your character rig",

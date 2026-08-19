@@ -28,6 +28,7 @@ from .animation_export_ops import (
     pack_section,
 )
 from .mod_exporter.xml_converter import convert_handler, io_handler, parse_handler
+from .utils.game_root import ensure_game_root_or_prompt
 
 
 XXH64_PRIME_1 = 11400714785074694791
@@ -751,6 +752,85 @@ def _find_animation_file_by_name(root: ET.Element, animation_name: str) -> str |
     return None
 
 
+def _find_animation_element_by_name(root: ET.Element, animation_name: str) -> ET.Element | None:
+    target = animation_name.strip().lower()
+    for animation in root.findall("./AnimationList/Animation"):
+        if animation.attrib.get("Name", "").strip().lower() == target:
+            return animation
+    return None
+
+
+def _animation_names(root: ET.Element) -> set[str]:
+    return {
+        animation.attrib.get("Name", "").strip().lower()
+        for animation in root.findall("./AnimationList/Animation")
+        if animation.attrib.get("Name", "").strip()
+    }
+
+
+def _default_animation_name(root: ET.Element) -> str:
+    default = root.find("./DefaultAnimation")
+    if default is None:
+        return ""
+    return default.attrib.get("Name", "").strip()
+
+
+def _set_default_animation(root: ET.Element, name: str, *, overwrite: bool) -> bool:
+    default = root.find("./DefaultAnimation")
+    if default is not None and default.attrib.get("Name", "").strip() and not overwrite:
+        return False
+    if default is None:
+        default = ET.SubElement(root, "DefaultAnimation")
+    default.attrib["Name"] = name
+    default.attrib["Autoplay"] = "true"
+    return True
+
+
+def _first_existing_animation_name(root: ET.Element, names: tuple[str, ...]) -> str | None:
+    for name in names:
+        if _find_animation_element_by_name(root, name) is not None:
+            return name
+    return None
+
+
+def _active_animation_file_name(
+    asset_index,
+    source_reference: str,
+    output_path: Path,
+    file_name: str,
+    build_context: DualFormBuildContext | None,
+) -> str:
+    try:
+        official = (
+            _resolve_animation_reference(asset_index, source_reference, file_name)
+            if build_context is None
+            else build_context.resolve_animation_reference(asset_index, source_reference, file_name)
+        )
+        return _relative_from_file(output_path, official)
+    except ValueError:
+        local_target = posixpath.normpath(
+            posixpath.join(posixpath.dirname(source_reference), _normalize_slashes(file_name))
+        ).replace("\\", "/")
+        return posixpath.relpath(
+            local_target,
+            start=posixpath.dirname(_documents_res_relative(output_path)),
+        ).replace("\\", "/")
+
+
+def _append_animation_from_template(
+    animation_list: ET.Element,
+    template: ET.Element,
+    *,
+    name: str,
+    file_name: str,
+) -> ET.Element:
+    animation = copy.deepcopy(template)
+    animation.attrib["Name"] = name
+    animation.attrib["FileName"] = file_name
+    animation_list.append(animation)
+    return animation
+
+
 def _rewrite_animconfig(
     asset_index,
     source_root: ET.Element,
@@ -762,7 +842,9 @@ def _rewrite_animconfig(
     trigger_names: set[str],
     active_on_trigger: bool,
     build_context: DualFormBuildContext | None = None,
-) -> None:
+    create_unexisting_animations: bool = False,
+) -> list[str]:
+    warnings: list[str] = []
     output_root = output_path.parent
     animation_folder = output_root / f"animations_{output_path.stem}"
     animation_folder.mkdir(parents=True, exist_ok=True)
@@ -871,7 +953,109 @@ def _rewrite_animconfig(
             for future in as_completed(futures):
                 _write_prepared_text(futures[future], future.result(), build_context)
 
+    if create_unexisting_animations:
+        warnings.extend(
+            _patch_unexisting_dual_form_animations(
+                asset_index,
+                root,
+                source_root,
+                source_reference,
+                output_path,
+                trigger_names,
+                active_on_trigger,
+                shared_disabled_animation_reference,
+                build_context,
+            )
+        )
+
     _write_animconfig(output_path, root, build_context)
+    return warnings
+
+
+def _patch_unexisting_dual_form_animations(
+    asset_index,
+    root: ET.Element,
+    source_root: ET.Element,
+    source_reference: str,
+    output_path: Path,
+    trigger_names: set[str],
+    active_on_trigger: bool,
+    shared_disabled_animation_reference: str | None,
+    build_context: DualFormBuildContext | None,
+) -> list[str]:
+    warnings: list[str] = []
+    skin_template = _find_animation_element_by_name(source_root, "skin")
+    if skin_template is None:
+        warnings.append(
+            f"{output_path.name}: Create Unexisting Animations skipped because animconfig has no 'skin' animation."
+        )
+        return warnings
+    if shared_disabled_animation_reference is None:
+        warnings.append(
+            f"{output_path.name}: Create Unexisting Animations skipped because disabled.animation could not be created from skin.animation."
+        )
+        return warnings
+
+    animation_list = root.find("./AnimationList")
+    if animation_list is None:
+        warnings.append(f"{output_path.name}: Create Unexisting Animations skipped because AnimationList is missing.")
+        return warnings
+
+    existing_names = _animation_names(root)
+    missing_triggers = sorted(name for name in trigger_names if name not in existing_names)
+
+    if active_on_trigger:
+        disabled = _find_animation_element_by_name(root, "disabled")
+        if disabled is None:
+            disabled = _append_animation_from_template(
+                animation_list,
+                skin_template,
+                name="disabled",
+                file_name=shared_disabled_animation_reference,
+            )
+        else:
+            disabled.attrib["FileName"] = shared_disabled_animation_reference
+        existing_names.add("disabled")
+        _set_default_animation(root, "disabled", overwrite=True)
+
+        template_name = _first_existing_animation_name(source_root, ("idle", "skin"))
+        if template_name is None:
+            warnings.append(f"{output_path.name}: Missing trigger animations skipped because no idle or skin template exists.")
+            return warnings
+        template = _find_animation_element_by_name(source_root, template_name)
+        template_file_name = template.attrib.get("FileName", "").strip() if template is not None else ""
+        if not template_file_name:
+            warnings.append(f"{output_path.name}: Missing trigger animations skipped because {template_name} has no FileName.")
+            return warnings
+        active_file_name = _active_animation_file_name(
+            asset_index,
+            source_reference,
+            output_path,
+            template_file_name,
+            build_context,
+        )
+        for name in missing_triggers:
+            _append_animation_from_template(
+                animation_list,
+                template,
+                name=name,
+                file_name=active_file_name,
+            )
+    else:
+        if not _default_animation_name(root):
+            default_name = _first_existing_animation_name(root, ("idle", "skin"))
+            if default_name is not None:
+                _set_default_animation(root, default_name, overwrite=False)
+
+        for name in missing_triggers:
+            _append_animation_from_template(
+                animation_list,
+                skin_template,
+                name=name,
+                file_name=shared_disabled_animation_reference,
+            )
+
+    return warnings
 
 
 def _next_socket_index(socket_objects: ET.Element) -> int:
@@ -1732,6 +1916,9 @@ class IDVMI_OT_Build_Dual_Form_Skin(bpy.types.Operator):
             dual_gim_path = Path(bpy.path.abspath(context.scene.neox_dual_form_dual_gim))
             if not main_gim_path.is_file() or not dual_gim_path.is_file():
                 raise ValueError("Select both main and dual form .gim files")
+            if not ensure_game_root_or_prompt(self, context):
+                build_context.shutdown(cancel_pending=True)
+                return {"CANCELLED"}
 
             from .remote_import import _make_asset_index
 
@@ -1780,6 +1967,9 @@ class IDVMI_OT_Build_Dual_Form_Skin(bpy.types.Operator):
             if not trigger_names:
                 raise ValueError("Add at least one dual form trigger animation")
 
+            create_unexisting_animations = bool(
+                context.scene.neox_dual_form_create_unexisting_animations
+            )
             wrapper_gim_path = _build_dual_form_wrapper(
                 asset_index,
                 main_gim_path,
@@ -1793,7 +1983,8 @@ class IDVMI_OT_Build_Dual_Form_Skin(bpy.types.Operator):
             )
             main_output_animconfig = main_gim_path.with_suffix(".animconfig")
             dual_output_animconfig = dual_gim_path.with_suffix(".animconfig")
-            _rewrite_animconfig(
+            rewrite_warnings = []
+            main_rewrite_warnings = _rewrite_animconfig(
                 asset_index,
                 main_anim_root,
                 main_source_ref,
@@ -1804,8 +1995,9 @@ class IDVMI_OT_Build_Dual_Form_Skin(bpy.types.Operator):
                 trigger_names,
                 active_on_trigger=False,
                 build_context=build_context,
+                create_unexisting_animations=create_unexisting_animations,
             )
-            _rewrite_animconfig(
+            dual_rewrite_warnings = _rewrite_animconfig(
                 asset_index,
                 dual_anim_root,
                 dual_source_ref,
@@ -1816,7 +2008,14 @@ class IDVMI_OT_Build_Dual_Form_Skin(bpy.types.Operator):
                 trigger_names,
                 active_on_trigger=True,
                 build_context=build_context,
+                create_unexisting_animations=create_unexisting_animations,
             )
+            rewrite_warnings.extend(main_rewrite_warnings)
+            rewrite_warnings.extend(dual_rewrite_warnings)
+            for warning in rewrite_warnings[:8]:
+                self.report({"WARNING"}, warning)
+            if len(rewrite_warnings) > 8:
+                self.report({"WARNING"}, f"{len(rewrite_warnings) - 8} more dual form warning(s)")
 
             _set_file_value(main_root, "AnimationConfigFile", main_output_animconfig.name)
             _set_file_value(dual_root, "AnimationConfigFile", dual_output_animconfig.name)

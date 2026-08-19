@@ -26,8 +26,15 @@ class RemoteMaterialPackage:
     mesh_data: bytes
     materials: list[dict[str, str]] = field(default_factory=list)
     submesh_mtl_indices: dict[int, int] = field(default_factory=dict)
+    submesh_names: dict[int, str] = field(default_factory=dict)
     sockets: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+
+
+def import_object_name_from_package(package: RemoteMaterialPackage) -> str:
+    asset_path = package.gim_asset_path or package.mesh_asset_path
+    normalized = str(asset_path).replace("\\", "/")
+    return posixpath.basename(normalized).rsplit(".", 1)[0]
 
 
 @dataclass(frozen=True)
@@ -68,9 +75,11 @@ def build_remote_material_package(asset_path: str, cache_root: Path) -> RemoteMa
 
     materials: list[dict[str, str]] = []
     submesh_mtl_indices: dict[int, int] = {}
+    submesh_names: dict[int, str] = {}
     sockets: list[dict] = []
     if gim_root is not None:
         submesh_mtl_indices = _submesh_mtl_indices_from_gim(gim_root)
+        submesh_names = _submesh_names_from_gim(gim_root)
         sockets = _socket_data_from_gim(gim_root)
         try:
             mtg_root = _xml_root_from_bytes(asset_index.extract(mtg_asset_path).data, ".mtg", mtg_asset_path)
@@ -85,6 +94,7 @@ def build_remote_material_package(asset_path: str, cache_root: Path) -> RemoteMa
         mesh_data=mesh_data,
         materials=materials,
         submesh_mtl_indices=submesh_mtl_indices,
+        submesh_names=submesh_names,
         sockets=sockets,
         warnings=warnings,
     )
@@ -152,10 +162,12 @@ def build_local_material_package(input_path: str | Path, cache_root: Path) -> Re
 
     materials: list[dict[str, str]] = []
     submesh_mtl_indices: dict[int, int] = {}
+    submesh_names: dict[int, str] = {}
     sockets: list[dict] = []
     selected_mtg = _ResolvedLocalOrRemoteFile(selected_mtg_path, str(selected_mtg_path))
     if gim_root is not None:
         submesh_mtl_indices = _submesh_mtl_indices_from_gim(gim_root)
+        submesh_names = _submesh_names_from_gim(gim_root)
         sockets = _socket_data_from_gim(gim_root)
         mtg_reference = _mtg_path_from_gim(gim_root, gim_identifier, None)
         if mtg_reference:
@@ -181,6 +193,7 @@ def build_local_material_package(input_path: str | Path, cache_root: Path) -> Re
         mesh_data=mesh_data,
         materials=materials,
         submesh_mtl_indices=submesh_mtl_indices,
+        submesh_names=submesh_names,
         sockets=sockets,
         warnings=warnings,
     )
@@ -504,6 +517,22 @@ def _submesh_mtl_indices_from_gim(root: ET.Element) -> dict[int, int]:
             result[int(match.group(1))] = int(mtl_idx)
         except ValueError:
             continue
+    return result
+
+
+def _submesh_names_from_gim(root: ET.Element) -> dict[int, str]:
+    submesh = root.find(".//SubMesh")
+    if submesh is None:
+        return {}
+
+    result: dict[int, str] = {}
+    for child in submesh:
+        match = re.fullmatch(r"Sub(\d+)", child.tag)
+        if not match:
+            continue
+        name = child.attrib.get("Name", "").strip()
+        if name:
+            result[int(match.group(1))] = name
     return result
 
 

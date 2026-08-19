@@ -50,6 +50,7 @@ classes = [
            ui.IDVMI_Neox_Dual_Form_Trigger_Presets,
            ui.IDVMI_Neox_Dual_Form_Trigger_Preset_Import,
            ui.IDVMI_Neox_Dual_Form_Trigger_Preset_Export,
+           ui.IDVMI_Neox_Dual_Form_Advanced,
            ui.IDVMI_Neox_Dual_Form_Build,
            ui.IDVMI_Neox_Mesh_Import,
            ui.IDVMI_Neox_Mesh_Export,

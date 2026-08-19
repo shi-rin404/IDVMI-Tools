@@ -322,6 +322,10 @@ def _draw_dual_form_trigger_preset_export(layout, scene, context):
     layout.operator("idvmi_neox.dual_form_export_preset", text="Export Preset", icon="EXPORT")
 
 
+def _draw_dual_form_advanced(layout, scene, context):
+    layout.prop(scene, "neox_dual_form_create_unexisting_animations")
+
+
 def _draw_build_dual_form_skin_button(layout, scene, context):
     layout.operator("idvmi_neox.build_dual_form_skin", icon="MODIFIER")
 

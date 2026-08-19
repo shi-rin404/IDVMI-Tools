@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
-import os
 import posixpath
 import re
 from pathlib import Path
@@ -16,6 +15,7 @@ from .remote_import import (
     RemoteMaterialPackage,
     build_local_material_package,
     build_remote_material_package,
+    import_object_name_from_package,
     _LocalReferenceResolver,
     _asset_reference_for_local_path,
     _make_asset_index,
@@ -189,7 +189,7 @@ def _import_single_extra_part(
     if model == {}:
         raise ValueError("model could not be decoded")
 
-    obj_name = os.path.basename(package.mesh_asset_path).rsplit(".", 1)[0]
+    obj_name = import_object_name_from_package(package)
     before_armatures = {obj.name for obj in bpy.data.objects if obj.type == "ARMATURE"}
     if not import_model(model, obj_name, operator, package, import_sockets=False):
         raise RuntimeError("existing import pipeline returned CANCELLED")

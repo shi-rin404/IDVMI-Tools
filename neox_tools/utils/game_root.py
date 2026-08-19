@@ -15,6 +15,7 @@ GAME_DIR_RE = re.compile(r"^[A-Z]:\\Loading Bay Games\\Identity V\\?$", re.IGNOR
 LOCAL_PATHES_NAME = "local_pathes.json"
 DEFAULT_LOCAL_PATHES = {"game_root": ""}
 _GAME_EXECUTABLE_PROMPT_REQUESTED = False
+_PENDING_GAME_ROOT_OPERATOR: tuple[str, dict] | None = None
 
 
 class GameRootNotConfigured(FileNotFoundError):
@@ -149,6 +150,28 @@ def get_game_root(*, prompt_on_missing: bool = False) -> Path:
     raise GameRootNotConfigured("Identity V game root could not be detected") from last_error
 
 
+def ensure_game_root_or_prompt(
+    operator,
+    context,
+    *,
+    retry_operator: str | None = None,
+    retry_properties: dict | None = None,
+) -> bool:
+    try:
+        get_game_root(prompt_on_missing=False)
+        return True
+    except GameRootNotConfigured:
+        request_game_executable(
+            retry_operator=retry_operator or getattr(operator, "bl_idname", ""),
+            retry_properties=retry_properties,
+        )
+        operator.report(
+            {"INFO"},
+            "Identity V game root is missing. Select dwrg.exe to continue this operation.",
+        )
+        return False
+
+
 def get_documents_mod_directory() -> str:
     try:
         mod_dir = get_game_root(prompt_on_missing=False) / "Documents" / "res" / "mod"
@@ -162,8 +185,15 @@ def get_documents_mod_directory() -> str:
     return str(mod_dir)
 
 
-def request_game_executable() -> None:
+def request_game_executable(
+    *,
+    retry_operator: str | None = None,
+    retry_properties: dict | None = None,
+) -> None:
     global _GAME_EXECUTABLE_PROMPT_REQUESTED
+    global _PENDING_GAME_ROOT_OPERATOR
+    if retry_operator:
+        _PENDING_GAME_ROOT_OPERATOR = (retry_operator, dict(retry_properties or {}))
     if _GAME_EXECUTABLE_PROMPT_REQUESTED:
         return
     try:
@@ -171,6 +201,30 @@ def request_game_executable() -> None:
         _GAME_EXECUTABLE_PROMPT_REQUESTED = True
     except Exception:
         return
+
+
+def _run_pending_game_root_operator():
+    global _PENDING_GAME_ROOT_OPERATOR
+    pending = _PENDING_GAME_ROOT_OPERATOR
+    _PENDING_GAME_ROOT_OPERATOR = None
+    if pending is None:
+        return None
+
+    operator_id, properties = pending
+    module_name, _, operator_name = operator_id.partition(".")
+    if not module_name or not operator_name:
+        return None
+
+    try:
+        operator_module = getattr(bpy.ops, module_name)
+        operator_call = getattr(operator_module, operator_name)
+        try:
+            operator_call("INVOKE_DEFAULT", **properties)
+        except TypeError:
+            operator_call("EXEC_DEFAULT", **properties)
+    except Exception as exc:
+        print(f"[IDVMI] Failed to resume operator after game root selection: {operator_id}: {exc}")
+    return None
 
 
 class IDVMI_OT_Select_Game_Executable(bpy.types.Operator, ImportHelper):
@@ -181,29 +235,43 @@ class IDVMI_OT_Select_Game_Executable(bpy.types.Operator, ImportHelper):
     filename_ext = ".exe"
     filepath: StringProperty(subtype="FILE_PATH")
     filter_glob: StringProperty(
-        default="dwrg.exe",
+        default="*.exe",
         options={"HIDDEN"},
         maxlen=255,
     )
 
     def invoke(self, context, event):
-        self.filter_glob = "dwrg.exe"
+        self.filter_glob = "*.exe"
         context.window_manager.fileselect_add(self)
         return {"RUNNING_MODAL"}
 
     def execute(self, context):
+        global _GAME_EXECUTABLE_PROMPT_REQUESTED
+        global _PENDING_GAME_ROOT_OPERATOR
+
         executable_path = Path(bpy.path.abspath(self.filepath))
         if executable_path.name.lower() != "dwrg.exe":
             self.report({"ERROR"}, "Please select dwrg.exe")
+            _GAME_EXECUTABLE_PROMPT_REQUESTED = False
+            _PENDING_GAME_ROOT_OPERATOR = None
             return {"CANCELLED"}
 
         try:
             root = save_game_root(executable_path)
         except Exception as exc:
             self.report({"ERROR"}, f"Invalid Identity V executable: {exc}")
+            _GAME_EXECUTABLE_PROMPT_REQUESTED = False
+            _PENDING_GAME_ROOT_OPERATOR = None
             return {"CANCELLED"}
 
-        global _GAME_EXECUTABLE_PROMPT_REQUESTED
         _GAME_EXECUTABLE_PROMPT_REQUESTED = False
         self.report({"INFO"}, f"Identity V game root saved: {root}")
+        if _PENDING_GAME_ROOT_OPERATOR is not None:
+            bpy.app.timers.register(_run_pending_game_root_operator, first_interval=0.1)
         return {"FINISHED"}
+
+    def cancel(self, context):
+        global _GAME_EXECUTABLE_PROMPT_REQUESTED
+        global _PENDING_GAME_ROOT_OPERATOR
+        _GAME_EXECUTABLE_PROMPT_REQUESTED = False
+        _PENDING_GAME_ROOT_OPERATOR = None

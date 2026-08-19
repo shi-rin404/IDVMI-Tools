@@ -6,6 +6,7 @@ import bpy, os
 from ..export_ops import get_armature, export_neox_mesh, parse_blender_meshes
 from .texture_handler import texture_handler
 from .rig_handler import rig_handler
+from ..utils.game_root import ensure_game_root_or_prompt
 from .gim_handler import gim_handler
 from .mod_json_maker import mod_json_maker
 
@@ -112,6 +113,23 @@ class IDVMI_OT_Export_Neox_Mod(bpy.types.Operator):
     bl_label = "Export NeoX Mod"
 
     def execute(self, context):
+        needs_game_root = (
+            (
+                context.scene.neox_rig_selector == "custom"
+                and context.scene.animconfig_location == "customize_remote"
+            )
+            or (
+                context.scene.neox_rig_selector == "custom"
+                and context.scene.custom_gim_location == "remote"
+            )
+            or (
+                context.scene.custom_gim_bool
+                and context.scene.custom_gim_location == "remote"
+            )
+        )
+        if needs_game_root and not ensure_game_root_or_prompt(self, context):
+            return {'CANCELLED'}
+
         root = os.path.dirname(__file__)
         log_file = os.path.join(root, "export_per_material_log.txt")
         with open(log_file, "w") as log:
