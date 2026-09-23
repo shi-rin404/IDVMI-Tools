@@ -518,18 +518,12 @@ def parse_mesh_3(model: dict[str, Any], f: BinaryIO, operator) -> dict[str, Any]
             vertex_weights = [readfloat(f) for _ in range(4)]
             model['vertex_weight'].append(vertex_weights)
 
-    # footer: BoneWeightUsageMask
-    if model['bone_exist']:
-        model['bone_weight_usage'] = read_bone_weight_usage_mask(f, model['bone_name'])
-        if f.tell() != table_offset:
-            raise ValueError(
-                "Bone usage mask does not end at table_offset: "
-                f"current={f.tell()}, table_offset={table_offset}"
-            )
-        model['bone_tail'] = model['bone_weight_usage']['raw']
-    else:
-        bone_tail_size = table_offset - f.tell()
-        model['bone_tail'] = f.read(bone_tail_size)
+    # Parser 3's footer is opaque; it is not necessarily a BoneWeightUsageMask.
+    model['bone_weight_usage'] = None
+    bone_tail_size = table_offset - f.tell()
+    if bone_tail_size < 0:
+        raise ValueError("table_offset precedes the end of mesh data")
+    model['bone_tail'] = f.read(bone_tail_size)
     
     f.seek(table_offset)
 

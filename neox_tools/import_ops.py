@@ -1301,7 +1301,7 @@ def import_per_material(
             armature_obj['Neox:BoneMatrix'] = model['bone_matrix']
 
             armature_obj['NeoX:BoneTail'] = model['bone_tail']
-            if 'bone_weight_usage' in model:
+            if model.get('bone_weight_usage') is not None:
                 armature_obj['NeoX:BoneWeightUsageBitCount'] = (
                     model['bone_weight_usage']['bit_count']
                 )

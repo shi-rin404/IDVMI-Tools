@@ -730,12 +730,8 @@ def build_source_rest_data(
 def replace_action(armature_obj: bpy.types.Object, action_name: str) -> bpy.types.Action:
     armature_obj.animation_data_create()
 
-    existing = bpy.data.actions.get(action_name)
-    if existing is not None:
-        if armature_obj.animation_data.action == existing:
-            armature_obj.animation_data.action = None
-        bpy.data.actions.remove(existing, do_unlink=True)
-
+    # Actions are shared globally; let Blender uniquify names without deleting
+    # an existing action that may belong to another armature.
     action = bpy.data.actions.new(action_name)
     armature_obj.animation_data.action = action
     return action
