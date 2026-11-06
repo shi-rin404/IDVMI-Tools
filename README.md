@@ -1,23 +1,29 @@
 # IDVMI-Tools
-Blender plugin for 3D Migoto mods and proprietary engine level mods for the certain Doll Dressing-up PvP game
 
-# Blender Version
-3.6
+A Blender add-on for 3DMigoto and proprietary game engine modding, developed for a doll-dressing PvP game.
 
-# Features
-## 3D Migoto
-- Mesh Importer: Imports ib/vb0*.txt files and character .buf files
-- Automated Asset Detection: Filters 3D models and excludes 2D/UI elements. (Outdated since preprietary engine version 3)
-- Auto-Texture Assignment: Automatically maps textures to materials.
-- Pose Importer: Inputs cb.txt and cb.buf files and an imported mesh
-- Mod Exporter: Automates .ini file creation for mod loader
+Provides tools for asset lookup, extraction, mesh and animation import/export, material setup, and modding workflow automation.
 
-## Proprietary Engine
-- Mesh Importer/Exporter
-- Socket Operations
-- Custom Armature Exporting
-- Animation Importer/Exporter
-- Mod Exporter
+## Blender Version
+- Blender 3.6
 
-# Preview
-<img width="1509" height="810" alt="496562350-1765e11f-10dd-49cb-a349-da3ae8b7cbde" src="https://github.com/user-attachments/assets/7677736c-3c73-4065-98b6-519d28a3be1a" />
+## Features
+
+### 3DMigoto
+- **Mesh Importer:** Imports `.ib`, `vb0*.txt`, and character `.buf` files.
+- **Automated Asset Detection:** Identifies 3D models while excluding 2D/UI elements. *(Outdated since proprietary engine version 3.)*
+- **Auto-Texture Assignment:** Automatically assigns textures to materials.
+- **Pose Importer:** Imports pose data from `cb.txt` and `cb.buf` files.
+- **Mod Exporter:** Automates `.ini` file generation for the mod loader.
+
+### Proprietary Game Engine
+- **Asset Lookup & Extraction:** Locates assets using the game's lookup data and extracts them from game archives.
+- **Mesh Importer/Exporter:** Supports proprietary binary mesh formats, skeletons, coordinate system conversions, bone transformations, and LOD handling.
+- **Animation Importer/Exporter:** Imports and exports skeletal animations, including compressed quaternion rotations and FP16 position/scale data.
+- **Armature Tools:** Supports custom armature exporting, bone mapping, and socket operations.
+- **Material Automation:** Imports baked-lighting textures and automatically configures Blender material nodes.
+- **Mod Exporter:** Exports modified assets for use with the game's proprietary engine.
+
+## Preview
+
+<img width="1509" height="810" alt="IDVMI-Tools Blender add-on preview" src="https://github.com/user-attachments/assets/7677736c-3c73-4065-98b6-519d28a3be1a" />
