@@ -18,9 +18,9 @@ Provides tools for asset lookup, extraction, mesh and animation import/export, m
 
 ### Proprietary Game Engine
 - **Asset Lookup & Extraction:** Locates assets using the game's lookup data and extracts them from game archives.
-- **Mesh Importer/Exporter:** Supports proprietary binary mesh formats, skeletons, coordinate system conversions, bone transformations, and LOD handling.
-- **Animation Importer/Exporter:** Imports and exports skeletal animations, including compressed quaternion rotations and FP16 position/scale data.
-- **Armature Tools:** Supports custom armature exporting, bone mapping, and socket operations.
+- **Mesh Importer/Exporter:** Supports proprietary binary mesh formats.
+- **Animation Importer/Exporter:** Imports and exports skeletal animations.
+- **Armature Tools:** Supports custom armature exporting and socket operations.
 - **Material Automation:** Imports baked-lighting textures and automatically configures Blender material nodes.
 - **Mod Exporter:** Exports modified assets for use with the game's proprietary engine.
 
