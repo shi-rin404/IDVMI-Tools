@@ -2,6 +2,7 @@ import bpy
 
 def unregister_props():
     unregister = [
+        lambda: delattr(bpy.types.Scene, "skeleton_action_selector"),
         lambda: delattr(bpy.types.Scene, "socket_action_selector"),
         lambda: delattr(bpy.types.Scene, "socket_create_location"),
         lambda: delattr(bpy.types.Scene, "custom_gim_bool"),

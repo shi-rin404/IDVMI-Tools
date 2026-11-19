@@ -14,6 +14,7 @@ from ..addon import auto_update, ui
 from ..neox_tools.mod_exporter.mod_export_ops import IDVMI_OT_Export_Neox_Mod
 from ..neox_tools.socket_operations import visualize_socket_ops
 from ..neox_tools import dual_form_ops
+from ..neox_tools.skeleton_editor import IDVMI_OT_Create_Hybrid_Skeleton
 
 # '3dm' starts with a digit, so standard relative import syntax is not valid.
 # Use importlib to load the subpackage by string name.
@@ -31,6 +32,7 @@ IDVMI_OT_set_textures = _3dm_set_textures.IDVMI_OT_set_textures
 Export3DMigoto = _3dm_export_ops.Export3DMigoto
 
 classes = [
+           IDVMI_OT_Create_Hybrid_Skeleton,
            dual_form_ops.IDVMI_PG_Dual_Form_Trigger,
            dual_form_ops.IDVMI_UL_Dual_Form_Triggers,
            dual_form_ops.IDVMI_OT_Dual_Form_Add_Trigger,

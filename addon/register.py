@@ -34,6 +34,12 @@ def set_neox_animation_export_loop(scene, value):
 
 
 def register_props():
+    bpy.types.Scene.skeleton_action_selector = bpy.props.EnumProperty(
+        name="Select Action",
+        description="Select a skeleton editing action",
+        items=[('create_hybrid', "Create Hybrid Skeleton", "Combine two armatures, keeping the active armature's bones")],
+        default='create_hybrid',
+    )
     bpy.types.Scene.socket_action_selector = bpy.props.EnumProperty(
         name="Action",
         description="Select your socket action",
@@ -437,6 +443,7 @@ def register_props():
             ('OPT_NeoX_Mod_Exporter', "Export NeoX Mod", "Exports NeoX mod"),
             ('OPT_Build_Dual_Form_Skin', "Build Dual Form Skin", "Build a dual-form skin from exported NeoX gim files"),
             ('OPT_Socket_Operations', "Socket Operations", "Socket editor GUI"),
+            ('OPT_Skeleton_Editor', "Skeleton Editor", "Create and edit skeletons"),
             ('OPT_Import_Neox_FX', "Import FX (Under Development)", "Import a JSON-converted NeoX BPSE FX preview"),
         ],
         default='OPT_NeoX_Mesh'

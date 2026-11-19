@@ -644,9 +644,7 @@ def get_active_armature(context) -> bpy.types.Object:
     if obj is None or obj.type != "ARMATURE":
         raise RuntimeError("The active object must be the target armature.")
 
-    if "NeoX:BoneOrder" not in obj:
-        raise RuntimeError('Active armature has no "NeoX:BoneOrder" property.')
-    if "Neox:BoneMatrix" not in obj:
+    if "NeoX:BoneOrder" in obj and "Neox:BoneMatrix" not in obj:
         raise RuntimeError('Active armature has no "Neox:BoneMatrix" property.')
 
     return obj
@@ -660,6 +658,9 @@ def build_source_rest_data(
     dict[str, Matrix],
     dict[str, tuple[Vector, Quaternion, Vector]],
 ]:
+    if "NeoX:BoneOrder" not in armature_obj:
+        return build_blender_rest_fallback(armature_obj, animation_bone_names)
+
     source_order = list(armature_obj["NeoX:BoneOrder"])
     source_matrices = armature_obj["Neox:BoneMatrix"]
 
@@ -724,6 +725,48 @@ def build_source_rest_data(
         rotation.normalize()
         source_local_rest_trs[name] = (location, rotation, scale)
 
+    return source_global_rest, correction, source_local_rest_trs
+
+
+def build_blender_rest_fallback(
+    armature_obj: bpy.types.Object,
+    animation_bone_names: Sequence[str],
+) -> tuple[
+    dict[str, Matrix],
+    dict[str, Matrix],
+    dict[str, tuple[Vector, Quaternion, Vector]],
+]:
+    # Without BoneOrder, stored source matrices cannot be matched safely.
+    # Approximate the source rest pose by undoing Blender's axis conversion.
+    # Original per-bone orientation corrections cannot be recovered this way.
+    axis_inverse = axis_conversion(
+        from_forward=SOURCE_FORWARD,
+        from_up=SOURCE_UP,
+        to_forward=TARGET_FORWARD,
+        to_up=TARGET_UP,
+    ).to_4x4().inverted()
+    source_global_rest: dict[str, Matrix] = {}
+    correction: dict[str, Matrix] = {}
+    source_local_rest_trs: dict[str, tuple[Vector, Quaternion, Vector]] = {}
+
+    for name in animation_bone_names:
+        bone = armature_obj.data.bones[name]
+        source_global = axis_inverse @ bone.matrix_local
+        source_global_rest[name] = source_global
+        correction[name] = Matrix.Identity(4)
+        if bone.parent is None:
+            source_local = source_global
+        else:
+            parent_global = axis_inverse @ bone.parent.matrix_local
+            source_local = parent_global.inverted_safe() @ source_global
+        location, rotation, scale = source_local.decompose()
+        rotation.normalize()
+        source_local_rest_trs[name] = (location, rotation, scale)
+
+    print(
+        "[CPD] NeoX:BoneOrder is missing; using Blender rest pose. "
+        "Original source bone orientations may differ."
+    )
     return source_global_rest, correction, source_local_rest_trs
 
 

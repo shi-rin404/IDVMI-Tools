@@ -371,8 +371,26 @@ def _draw_socket_operations(layout, scene, context, folder_box): # MODIFIER
         _wrapped_label(folder_box, "Select the socket. Confirm.")
         folder_box.operator("idvmi_neox.delete_socket", text="Delete Socket", icon="TRASH")
 
+def _draw_skeleton_editor(layout, scene, context, folder_box):
+    layout.label(text="Select Action")
+    layout.prop(scene, "skeleton_action_selector", text="")
+    box = layout.box()
+    # Blender labels do not wrap; reserve space for panel and box padding.
+    scale = max(context.preferences.system.ui_scale, 0.5)
+    width = max(8, int((context.region.width / scale - 64) / 7))
+    instructions = box.column(align=True)
+    _wrapped_label(
+        instructions,
+        "In Object Mode, select two armatures. Select the dominant armature "
+        "last to make it active. Its bones take priority. Click Confirm.",
+        width=width,
+    )
+    box.operator("idvmi_neox.create_hybrid_skeleton", text="Confirm", icon="ARMATURE_DATA")
+
+
 # Dispatch map to replace if/elif chain
-neox_dispatch = {    
+neox_dispatch = {
+    'OPT_Skeleton_Editor': _draw_skeleton_editor,
     'OPT_Import_Neox_Mesh': _draw_import_neox_mesh,
     'OPT_Import_Neox_Animation': _draw_import_neox_animation,
     'OPT_Export_Neox_Animation': _draw_export_neox_animation,
@@ -392,6 +410,7 @@ _3dm_dispatch = {
 }
 
 no_folder_box = [
+    'OPT_Skeleton_Editor',
     'OPT_Import_3DM',
     'OPT_Import_CB_Pose',
     'OPT_Export_Neox_Mesh',
